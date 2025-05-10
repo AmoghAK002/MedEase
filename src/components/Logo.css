@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap');
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Comic Neue', cursive;
+  transition: all 0.3s ease;
+  padding: 10px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.logo-container:hover {
+  transform: scale(1.05);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.logo-container.small {
+  font-size: 1.2rem;
+}
+
+.logo-container.medium {
+  font-size: 1.8rem;
+}
+
+.logo-container.large {
+  font-size: 2.5rem;
+}
+
+.logo-icon {
+  color: #e74c3c;
+  animation: heartbeat 1.5s ease-in-out infinite;
+  transition: all 0.3s ease;
+}
+
+.logo-container:hover .logo-icon {
+  transform: scale(1.1);
+  color: #ff6b6b;
+}
+
+.logo-text {
+  font-weight: bold;
+  letter-spacing: 1px;
+  position: relative;
+}
+
+.logo-med {
+  color: #3498db;
+  transition: all 0.3s ease;
+}
+
+.logo-ease {
+  color: #2ecc71;
+  transition: all 0.3s ease;
+}
+
+.logo-container:hover .logo-med {
+  color: #2980b9;
+  text-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
+}
+
+.logo-container:hover .logo-ease {
+  color: #27ae60;
+  text-shadow: 0 0 10px rgba(46, 204, 113, 0.3);
+}
+
+@keyframes heartbeat {
+  0% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.3);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.3);
+  }
+  70% {
+    transform: scale(1);
+  }
+} 
