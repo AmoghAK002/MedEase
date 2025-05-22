@@ -1,19 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { auth, db } from '../firebase';
 import { useNavigate, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
-import { Cloudinary } from '@cloudinary/url-gen';
-import { AdvancedImage } from '@cloudinary/react';
 import Logo from './Logo';
-
-// Initialize Cloudinary
-const cld = new Cloudinary({ 
-  cloud: { 
-    cloudName: process.env.REACT_APP_CLOUDINARY_CLOUD_NAME || 'diq0qgpa8',
-    apiKey: process.env.REACT_APP_CLOUDINARY_API_KEY
-  } 
-});
+import RefillReminders from './RefillReminders';
 
 // Health facts array
 const healthFacts = [
@@ -386,7 +377,6 @@ document.head.appendChild(styleSheet);
 
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [userDetails, setUserDetails] = useState(null);
   const [bmiData, setBmiData] = useState(null);
   const [healthFact, setHealthFact] = useState('');
   const [userProfile, setUserProfile] = useState(null);
@@ -406,13 +396,11 @@ const Dashboard = () => {
         const docRef = doc(db, "users", user.uid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          setUserDetails(docSnap.data());
           setBmiData(docSnap.data().bmiData || null);
         }
       }
     };
     fetchUserData();
-    // Set a random health fact
     setHealthFact(healthFacts[Math.floor(Math.random() * healthFacts.length)]);
   }, []);
 
@@ -492,6 +480,12 @@ const Dashboard = () => {
                 <span>Mental Health</span>
               </Link>
             </li>
+            <li className={activeTab === 'refill' ? 'active' : ''}>
+              <Link to="/dashboard/refill">
+                <i className="fas fa-capsules"></i>
+                <span>Medication Refill</span>
+              </Link>
+            </li>
             <li onClick={handleLogout} className="logout-btn">
               <i className="fas fa-sign-out-alt"></i>
               <span>Logout</span>
@@ -502,21 +496,20 @@ const Dashboard = () => {
 
       <div className="main-content">
         <Routes>
-          <Route path="/" element={<DashboardHome 
-            userProfile={userProfile} 
-            bmiData={bmiData} 
-            healthFact={healthFact} 
-          />} />
-          <Route path="/profile" element={<ProfileSection userProfile={userProfile} />} />
+          <Route path="/" element={<DashboardHome userProfile={userProfile} bmiData={bmiData} healthFact={healthFact} />} />
+          <Route path="/profile" element={<ProfileSection userProfile={userProfile} setUserProfile={setUserProfile} />} />
           <Route path="/medical-records" element={<MedicalRecordsSection />} />
           <Route path="/reminders" element={<MedicineRemindersSection />} />
           <Route path="/bmi" element={<BMICalculatorSection onBMICalculated={setBmiData} />} />
           <Route path="/therapy" element={<TherapySection />} />
+          <Route path="/refill" element={<RefillReminders />} />
         </Routes>
       </div>
     </div>
   );
 };
+
+export default Dashboard;
 
 // Dashboard Home Component
 function DashboardHome({ userProfile, bmiData, healthFact }) {
@@ -559,7 +552,6 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
           <i className="fas fa-heartbeat"></i>
         </div>
       </div>
-      
       <div className="quick-stats">
         <div className="stat-card">
           <i className="fas fa-pills"></i>
@@ -577,7 +569,6 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
           <p>{bmiData ? `${bmiData.value} (${bmiData.category})` : 'Not calculated'}</p>
         </div>
       </div>
-
       <div className="dashboard-grid">
         <div className="recent-activity">
           <h3>Recent Activity</h3>
@@ -598,7 +589,6 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
             )}
           </div>
         </div>
-
         <div className="health-fact-card">
           <div className="fact-icon">
             <i className="fas fa-lightbulb"></i>
@@ -711,7 +701,6 @@ function BMICalculatorSection({ onBMICalculated }) {
   );
 }
 
-// Medicine Reminders Section Component
 function MedicineRemindersSection() {
   const [reminders, setReminders] = useState([]);
   const [newReminder, setNewReminder] = useState({
@@ -758,24 +747,8 @@ function MedicineRemindersSection() {
     };
   }, []);
 
-  // Function to format time to 12-hour format with AM/PM
-  const formatTime = (time24) => {
-    if (!time24) return '';
-    const [hours, minutes] = time24.split(':');
-    const period = hours >= 12 ? 'PM' : 'AM';
-    const hours12 = hours % 12 || 12;
-    return `${hours12}:${minutes} ${period}`;
-  };
-
-  // Function to check if it's time for a reminder
-  const isTimeForReminder = (reminderTime) => {
-    const now = new Date();
-    const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-    return currentTime === reminderTime;
-  };
-
   // Function to play notification sound
-  const playNotificationSound = () => {
+  const playNotificationSound = useCallback(() => {
     if (audioRef.current) {
       // Reset the audio to start
       audioRef.current.currentTime = 0;
@@ -784,10 +757,10 @@ function MedicineRemindersSection() {
         console.warn('Could not play notification sound:', error);
       });
     }
-  };
+  }, []);
 
   // Function to show reminder notification
-  const showReminderNotification = (reminder) => {
+  const showReminderNotification = useCallback((reminder) => {
     // Clear any existing notification timeout
     if (notificationTimeoutRef.current) {
       clearTimeout(notificationTimeoutRef.current);
@@ -817,20 +790,18 @@ function MedicineRemindersSection() {
     notificationTimeoutRef.current = setInterval(() => {
       playNotificationSound();
     }, 300000); // 5 minutes
-  };
+  }, [notificationPermission, playNotificationSound]);
 
   // Check for due reminders
   useEffect(() => {
     const checkDueReminders = () => {
       const now = new Date();
-      const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
+      const currentTime = now.toTimeString().slice(0, 5);
       const currentDate = now.toISOString().split('T')[0];
 
-      // Check if we need to update the last checked time
       if (currentTime !== lastCheckedTimeRef.current) {
         lastCheckedTimeRef.current = currentTime;
 
-        // Find due reminders
         const due = reminders.find(r => 
           !r.completed && 
           r.time === currentTime &&
@@ -844,10 +815,7 @@ function MedicineRemindersSection() {
       }
     };
 
-    // Check every 15 seconds
     intervalRef.current = setInterval(checkDueReminders, 15000);
-    
-    // Initial check
     checkDueReminders();
 
     return () => {
@@ -858,7 +826,7 @@ function MedicineRemindersSection() {
         clearTimeout(notificationTimeoutRef.current);
       }
     };
-  }, [reminders, notificationPermission]);
+  }, [reminders, showReminderNotification]);
 
   const markAsTaken = async (reminderId) => {
     try {
@@ -1194,7 +1162,7 @@ function MedicineRemindersSection() {
                     </div>
                     <div className="info-item time">
                       <i className="fas fa-clock"></i>
-                      <span>{formatTime(dueReminder.time)}</span>
+                      <span>{dueReminder.time}</span>
                     </div>
                     {dueReminder.notes && (
                       <div className="info-item notes">
@@ -1245,7 +1213,7 @@ function MedicineRemindersSection() {
                   <div className="reminder-details">
                     <div className="detail-item">
                       <i className="fas fa-clock"></i>
-                      <span>{formatTime(reminder.time)}</span>
+                      <span>{reminder.time}</span>
                     </div>
                     <div className="detail-item">
                       <i className="fas fa-sync"></i>
@@ -1295,17 +1263,113 @@ function MedicineRemindersSection() {
   );
 }
 
-// Profile Section Component with improved UI
-function ProfileSection({ userProfile }) {
+// Profile Section Component with improved UI and edit functionality
+function ProfileSection({ userProfile, setUserProfile }) {
+  const [editMode, setEditMode] = useState(false);
+  const [formData, setFormData] = useState(userProfile || {});
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+
+  // Only update formData when userProfile changes and not in edit mode
+  useEffect(() => {
+    if (!editMode) setFormData(userProfile || {});
+  }, [userProfile, editMode]);
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('User not authenticated');
+
+      // Validate email format if caretaker email is provided
+      if (formData.caretakerEmail && !isValidEmail(formData.caretakerEmail)) {
+        throw new Error('Please enter a valid caretaker email address');
+      }
+
+      // Create the update object with only the fields that can be edited
+      const updateData = {
+        ...userProfile, // Preserve existing data
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        dateOfBirth: formData.dateOfBirth,
+        phoneNumber: formData.phoneNumber,
+        caretakerPhone: formData.caretakerPhone,
+        caretakerEmail: formData.caretakerEmail,
+      };
+
+      // Update Firestore
+      await updateDoc(doc(db, 'users', user.uid), updateData);
+      
+      // Update local state
+      setUserProfile(updateData);
+      setSuccess('Profile updated successfully!');
+      setEditMode(false);
+      
+      // Show success toast
+      toast.success('Profile updated successfully!');
+    } catch (err) {
+      console.error('Error updating profile:', err);
+      setError('Failed to update profile: ' + err.message);
+      toast.error('Failed to update profile');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Add email validation function
+  const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   return (
     <div className="section profile-section">
-      <div className="profile-header-banner">
+      <div className="profile-header-banner" style={{position: 'relative'}}>
         <div className="profile-avatar">
           <i className="fas fa-user-circle"></i>
         </div>
         <h2>Profile Information</h2>
+        {!editMode && userProfile && (
+          <button
+            className="edit-profile-btn"
+            style={{
+              position: 'absolute',
+              top: 24,
+              right: 24,
+              background: '#3498db',
+              color: 'white',
+              border: 'none',
+              borderRadius: '50%',
+              width: 48,
+              height: 48,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(52,152,219,0.15)',
+              cursor: 'pointer',
+              fontSize: 22,
+              zIndex: 2,
+              transition: 'background 0.2s',
+            }}
+            title="Edit Profile"
+            onClick={() => setEditMode(true)}
+          >
+            <i className="fas fa-edit"></i>
+          </button>
+        )}
       </div>
-      
+      {error && <div className="alert alert-danger">{error}</div>}
+      {success && <div className="alert alert-success">{success}</div>}
       {userProfile ? (
         <div className="profile-content">
           <div className="profile-grid">
@@ -1317,7 +1381,32 @@ function ProfileSection({ userProfile }) {
               <div className="profile-details">
                 <div className="detail-item">
                   <label><i className="fas fa-user-tag"></i> Full Name</label>
-                  <p>{`${userProfile.firstName} ${userProfile.lastName}`}</p>
+                  {editMode ? (
+                    <div style={{display: 'flex', gap: '1rem'}}>
+                      <input
+                        type="text"
+                        name="firstName"
+                        value={formData.firstName || ''}
+                        onChange={handleChange}
+                        placeholder="First Name"
+                        className="form-control"
+                        style={{maxWidth: '150px'}}
+                        required
+                      />
+                      <input
+                        type="text"
+                        name="lastName"
+                        value={formData.lastName || ''}
+                        onChange={handleChange}
+                        placeholder="Last Name"
+                        className="form-control"
+                        style={{maxWidth: '150px'}}
+                        required
+                      />
+                    </div>
+                  ) : (
+                    <p>{`${userProfile.firstName} ${userProfile.lastName}`}</p>
+                  )}
                 </div>
                 <div className="detail-item">
                   <label><i className="fas fa-envelope"></i> Email</label>
@@ -1325,11 +1414,21 @@ function ProfileSection({ userProfile }) {
                 </div>
                 <div className="detail-item">
                   <label><i className="fas fa-calendar-alt"></i> Date of Birth</label>
-                  <p>{new Date(userProfile.dateOfBirth).toLocaleDateString()}</p>
+                  {editMode ? (
+                    <input
+                      type="date"
+                      name="dateOfBirth"
+                      value={formData.dateOfBirth || ''}
+                      onChange={handleChange}
+                      className="form-control"
+                      required
+                    />
+                  ) : (
+                    <p>{new Date(userProfile.dateOfBirth).toLocaleDateString()}</p>
+                  )}
                 </div>
               </div>
             </div>
-
             <div className="profile-card contact-info">
               <div className="profile-card-header">
                 <i className="fas fa-address-book"></i>
@@ -1338,15 +1437,62 @@ function ProfileSection({ userProfile }) {
               <div className="profile-details">
                 <div className="detail-item">
                   <label><i className="fas fa-phone"></i> Phone Number</label>
-                  <p>{userProfile.phoneNumber}</p>
+                  {editMode ? (
+                    <input
+                      type="tel"
+                      name="phoneNumber"
+                      value={formData.phoneNumber || ''}
+                      onChange={handleChange}
+                      className="form-control"
+                      required
+                    />
+                  ) : (
+                    <p>{userProfile.phoneNumber}</p>
+                  )}
                 </div>
                 <div className="detail-item">
                   <label><i className="fas fa-user-shield"></i> Caretaker's Phone</label>
-                  <p>{userProfile.caretakerPhone}</p>
+                  {editMode ? (
+                    <input
+                      type="tel"
+                      name="caretakerPhone"
+                      value={formData.caretakerPhone || ''}
+                      onChange={handleChange}
+                      className="form-control"
+                      required
+                    />
+                  ) : (
+                    <p>{userProfile.caretakerPhone}</p>
+                  )}
+                </div>
+                <div className="detail-item">
+                  <label><i className="fas fa-envelope"></i> Caretaker's Email</label>
+                  {editMode ? (
+                    <input
+                      type="email"
+                      name="caretakerEmail"
+                      value={formData.caretakerEmail || ''}
+                      onChange={handleChange}
+                      className="form-control"
+                      placeholder="Enter caretaker's email"
+                    />
+                  ) : (
+                    <p>{userProfile.caretakerEmail || 'Not provided'}</p>
+                  )}
                 </div>
               </div>
             </div>
           </div>
+          {editMode && (
+            <div style={{marginTop: 30, textAlign: 'center'}}>
+              <button className="btn btn-success" onClick={handleSave} disabled={isSaving}>
+                {isSaving ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-save"></i>} Save
+              </button>
+              <button className="btn btn-secondary" style={{marginLeft: 15}} onClick={() => { setEditMode(false); setFormData(userProfile); }}>
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="loading-profile">
@@ -1458,182 +1604,240 @@ function MedicalRecordsSection() {
       // Add user-specific folder
       const user = auth.currentUser;
       if (user) {
-        formData.append('folder', `users/${user.uid}/medical_records`);
+        formData.append('folder', `users/${user.uid}/medical-records`);
       }
 
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return prev;
-          }
-          return prev + 10;
-        });
-      }, 500);
-
+      // Upload to Cloudinary
       const response = await fetch(
-        `https://api.cloudinary.com/v1_1/diq0qgpa8/image/upload`,
+        `https://api.cloudinary.com/v1_1/${process.env.REACT_APP_CLOUDINARY_CLOUD_NAME}/image/upload`,
         {
           method: 'POST',
           body: formData,
         }
       );
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'Upload failed');
-      }
-
       const data = await response.json();
-      
+
       if (data.secure_url) {
-        const user = auth.currentUser;
-        if (user) {
-          const recordData = {
-            url: data.secure_url,
-            publicId: data.public_id,
-            fileName: selectedFile.name,
-            type: recordType,
-            uploadDate: new Date().toISOString(),
-            fileType: selectedFile.type,
-            fileSize: selectedFile.size,
-            lastModified: selectedFile.lastModified,
-            userId: user.uid // Add user ID to track ownership
-          };
+        // Save record to Firestore
+        const record = {
+          url: data.secure_url,
+          uploadDate: new Date().toISOString(),
+          type: recordType,
+          userId: user.uid
+        };
 
-          // Get existing records
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          const userData = userDoc.data();
-          const existingRecords = userData?.medicalRecords || [];
-
-          // Add new record to the beginning of the array
-          const updatedRecords = [recordData, ...existingRecords];
-
-          // Update Firestore with the new records array
-          await updateDoc(doc(db, "users", user.uid), {
-            medicalRecords: updatedRecords
-          });
-
-          // Update local state
-          setRecords(updatedRecords);
-          setUploadStatus('success');
-          toast.success('Medical record uploaded successfully!');
-          
-          // Reset form and preview
-          setSelectedFile(null);
-          setPreviewUrl(null);
-          document.querySelector('.file-input').value = '';
-        }
-      }
-    } catch (error) {
-      console.error('Upload error:', error);
-      setUploadStatus('error');
-      toast.error(`Error uploading medical record: ${error.message}`);
-    } finally {
-      setLoading(false);
-      setTimeout(() => {
-        setUploadStatus(null);
-        setUploadProgress(0);
-      }, 2000);
-    }
-  };
-
-  const deleteRecord = async (recordToDelete) => {
-    try {
-      const user = auth.currentUser;
-      if (user) {
-        // Get current records
-        const userDoc = await getDoc(doc(db, "users", user.uid));
-        const userData = userDoc.data();
-        const currentRecords = userData?.medicalRecords || [];
-
-        // Remove the record to delete
-        const updatedRecords = currentRecords.filter(record => 
-          record.publicId !== recordToDelete.publicId
-        );
-        
-        // Update Firestore
+        // Update user's medical records array
         await updateDoc(doc(db, "users", user.uid), {
-          medicalRecords: updatedRecords
+          medicalRecords: arrayUnion(record)
         });
 
-        // Update local state
-        setRecords(updatedRecords);
-        toast.success('Record deleted successfully');
+        setRecords([...records, record]);
+        setUploadStatus('uploaded');
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        toast.success('Medical record uploaded successfully!');
       }
     } catch (error) {
+      console.error('Error uploading record:', error);
+      toast.error('Error uploading medical record');
+      setUploadStatus('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteRecord = async (recordUrl) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        toast.error('User not authenticated');
+        return;
+      }
+
+      // Get current records
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      const userData = userDoc.data();
+      const currentRecords = userData?.medicalRecords || [];
+
+      // Remove the record from the array
+      const updatedRecords = currentRecords.filter(record => record.url !== recordUrl);
+
+      // Update Firestore
+      await updateDoc(doc(db, "users", user.uid), {
+        medicalRecords: updatedRecords
+      });
+
+      // Update local state
+      setRecords(updatedRecords);
+      toast.success('Medical record deleted successfully!');
+    } catch (error) {
       console.error('Error deleting record:', error);
-      toast.error('Error deleting record');
+      toast.error('Error deleting medical record');
     }
-  };
-
-  const renderPreview = (record) => {
-    if (record.fileType.includes('pdf')) {
-      return (
-        <div className="pdf-preview">
-          <i className="fas fa-file-pdf"></i>
-          <a 
-            href={record.url} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="preview-link"
-          >
-            View PDF
-          </a>
-        </div>
-      );
-    }
-    return (
-      <AdvancedImage
-        cldImg={cld.image(record.publicId)}
-        className="record-image"
-        alt={record.fileName}
-      />
-    );
-  };
-
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   return (
-    <div className="medical-records-container">
-      <h2>Medical Records</h2>
-      
-      <div className="upload-section">
-        <div className="form-group">
-          <label>Record Type</label>
-          <select 
-            value={recordType} 
-            onChange={(e) => setRecordType(e.target.value)}
-            className="form-control"
-          >
-            <option value="prescription">Prescription</option>
-            <option value="labReport">Lab Report</option>
-            <option value="xray">X-Ray</option>
-            <option value="mri">MRI Scan</option>
-            <option value="other">Other</option>
-          </select>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', minHeight: '70vh', background: '#f4f7fb', padding: '40px 0' }}>
+      <div style={{
+        background: '#fff',
+        borderRadius: '18px',
+        boxShadow: '0 8px 32px rgba(60,60,120,0.10)',
+        padding: '36px 32px',
+        maxWidth: '700px',
+        width: '100%',
+        margin: '0 16px',
+        transition: 'box-shadow 0.2s',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 28 }}>
+          <i className="fas fa-file-medical" style={{ fontSize: 28, color: '#2563eb', marginRight: 14 }}></i>
+          <h2 style={{ fontWeight: 700, fontSize: 26, margin: 0, color: '#222' }}>Medical Records</h2>
+        </div>
+        <p style={{ color: '#6b7280', marginBottom: 32, fontSize: 16 }}>Upload and manage your medical documents</p>
+
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 32 }}>
+          {/* Record Type */}
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label style={{ fontWeight: 600, color: '#374151', marginBottom: 8, display: 'block', fontSize: 15 }}>
+              <i className="fas fa-notes-medical" style={{ color: '#2563eb', marginRight: 7 }}></i>Type
+            </label>
+            <select
+              value={recordType}
+              onChange={(e) => setRecordType(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: '1.5px solid #e5e7eb',
+                fontSize: 15,
+                background: '#f9fafb',
+                fontWeight: 500,
+                outline: 'none',
+                transition: 'border 0.2s',
+              }}
+            >
+              <option value="prescription">Prescription</option>
+              <option value="lab-report">Lab Report</option>
+              <option value="xray">X-Ray</option>
+              <option value="mri">MRI Scan</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          {/* File Input */}
+          <div style={{ flex: 2, minWidth: 220 }}>
+            <label style={{ fontWeight: 600, color: '#374151', marginBottom: 8, display: 'block', fontSize: 15 }}>
+              <i className="fas fa-file-upload" style={{ color: '#2563eb', marginRight: 7 }}></i>File
+            </label>
+            <div
+              style={{
+                border: '2px dashed #c7d2fe',
+                borderRadius: 10,
+                background: '#f1f5f9',
+                padding: '18px 12px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'border 0.2s',
+                minHeight: 70,
+                position: 'relative',
+              }}
+              onClick={() => document.getElementById('file-upload-input').click()}
+              onDragOver={e => { e.preventDefault(); e.currentTarget.style.border = '2px solid #2563eb'; }}
+              onDragLeave={e => { e.preventDefault(); e.currentTarget.style.border = '2px dashed #c7d2fe'; }}
+              onDrop={e => {
+                e.preventDefault();
+                setSelectedFile(e.dataTransfer.files[0]);
+                e.currentTarget.style.border = '2px dashed #c7d2fe';
+              }}
+            >
+              <input
+                id="file-upload-input"
+                type="file"
+                onChange={handleFileChange}
+                accept=".jpg,.jpeg,.png,.pdf"
+                style={{ display: 'none' }}
+              />
+              <span style={{ fontSize: 15, color: '#374151', fontWeight: 500 }}>
+                {selectedFile ? selectedFile.name : 'Drag & drop or click to select file'}
+              </span>
+              <small style={{ display: 'block', color: '#6b7280', marginTop: 6, fontSize: 13 }}>
+                Max 5MB. JPG, PNG, PDF only.
+              </small>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div style={{ flex: 1.2, minWidth: 180 }}>
+            <label style={{ fontWeight: 600, color: '#374151', marginBottom: 8, display: 'block', fontSize: 15 }}>
+              <i className="fas fa-eye" style={{ color: '#2563eb', marginRight: 7 }}></i>Preview
+            </label>
+            <div style={{
+              background: '#f9fafb',
+              border: '1.5px solid #e5e7eb',
+              borderRadius: 10,
+              minHeight: 70,
+              height: 110,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              boxShadow: '0 2px 8px rgba(60,60,120,0.04)'
+            }}>
+              {previewUrl ? (
+                selectedFile?.type === 'application/pdf' ? (
+                  <iframe
+                    src={previewUrl}
+                    title="PDF Preview"
+                    style={{ width: '100%', height: '100%', border: 'none', borderRadius: 8 }}
+                  />
+                ) : (
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8, objectFit: 'contain' }}
+                  />
+                )
+              ) : (
+                <span style={{ color: '#9ca3af', fontSize: 14 }}>No file selected</span>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="file-upload">
-          <input
-            type="file"
-            onChange={handleFileChange}
-            accept=".jpg,.jpeg,.png,.pdf"
-            className="file-input"
-          />
+        {uploadStatus === 'uploading' && (
+          <div style={{ marginBottom: 18 }}>
+            <div className="progress" style={{ height: 8, borderRadius: 5 }}>
+              <div
+                className="progress-bar"
+                role="progressbar"
+                style={{ width: `${uploadProgress}%`, transition: 'width 0.3s', background: '#2563eb' }}
+                aria-valuenow={uploadProgress}
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                {uploadProgress}%
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{ textAlign: 'center', marginTop: 10 }}>
           <button
             onClick={handleUpload}
             disabled={!selectedFile || loading}
-            className="upload-button"
+            className="btn btn-primary"
+            style={{
+              padding: '13px 38px',
+              fontSize: '1.1rem',
+              borderRadius: '8px',
+              fontWeight: 600,
+              background: '#2563eb',
+              border: 'none',
+              boxShadow: '0 2px 8px rgba(37,99,235,0.08)',
+              transition: 'background 0.2s',
+              minWidth: '200px',
+              letterSpacing: '0.5px',
+            }}
           >
             {loading ? (
               <>
@@ -1647,113 +1851,160 @@ function MedicalRecordsSection() {
           </button>
         </div>
 
-        {selectedFile && (
-          <div className="upload-preview">
-            <h4>Preview</h4>
-            {selectedFile.type.includes('pdf') ? (
-              <div className="pdf-preview">
-                <i className="fas fa-file-pdf"></i>
-                <span>{selectedFile.name}</span>
-              </div>
-            ) : (
-              <img 
-                src={previewUrl} 
-                alt="Preview" 
-                className="preview-image"
-              />
-            )}
+        {/* Records List - keep previous design for now */}
+        <div className="records-list" style={{ marginTop: '40px' }}>
+          <div className="list-header" style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '20px',
+            padding: '15px',
+            backgroundColor: '#f8f9fa',
+            borderRadius: '8px'
+          }}>
+            <h3><i className="fas fa-list"></i> Your Records</h3>
+            <span className="record-count" style={{
+              backgroundColor: '#e9ecef',
+              padding: '5px 15px',
+              borderRadius: '20px',
+              fontSize: '0.9rem',
+              color: '#495057'
+            }}>
+              {records.length} records
+            </span>
           </div>
-        )}
 
-        {uploadStatus && (
-          <div className={`upload-status ${uploadStatus}`}>
-            {uploadStatus === 'uploading' && (
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill"
-                  style={{ width: `${uploadProgress}%` }}
-                ></div>
-                <span>{uploadProgress}%</span>
-              </div>
-            )}
-            {uploadStatus === 'success' && (
-              <div className="status-message success">
-                <i className="fas fa-check-circle"></i>
-                Upload successful!
-              </div>
-            )}
-            {uploadStatus === 'error' && (
-              <div className="status-message error">
-                <i className="fas fa-exclamation-circle"></i>
-                Upload failed. Please try again.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="records-section">
-        <h3>Your Medical Records</h3>
-        {isLoadingRecords ? (
-          <div className="loading-records">
-            <i className="fas fa-spinner fa-spin"></i>
-            <p>Loading your records...</p>
-          </div>
-        ) : records.length === 0 ? (
-          <div className="no-records">
-            <i className="fas fa-file-medical"></i>
-            <p>No medical records uploaded yet</p>
-          </div>
-        ) : (
-          <div className="records-grid">
-            {records.map((record, index) => (
-              <div key={index} className="record-card">
-                <div className="record-preview">
-                  {renderPreview(record)}
-                </div>
-                <div className="record-info">
-                  <div className="record-type">
-                    <i className="fas fa-tag"></i>
-                    <span>{record.type}</span>
+          {isLoadingRecords ? (
+            <div className="loading-records" style={{
+              textAlign: 'center',
+              padding: '40px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px'
+            }}>
+              <i className="fas fa-spinner fa-spin" style={{ fontSize: '2rem', color: '#6c757d' }}></i>
+              <p style={{ marginTop: '15px', color: '#6c757d' }}>Loading records...</p>
+            </div>
+          ) : records.length === 0 ? (
+            <div className="no-records" style={{
+              textAlign: 'center',
+              padding: '40px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px'
+            }}>
+              <i className="fas fa-file-medical" style={{ fontSize: '3rem', color: '#6c757d' }}></i>
+              <p style={{ marginTop: '15px', color: '#6c757d' }}>
+                No medical records found. Upload your first record above!
+              </p>
+            </div>
+          ) : (
+            <div className="records-grid" style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+              gap: '20px'
+            }}>
+              {records.map((record, index) => (
+                <div key={index} className="record-card" style={{
+                  backgroundColor: 'white',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                  transition: 'transform 0.3s ease'
+                }}>
+                  <div className="record-preview" style={{ height: '200px', overflow: 'hidden' }}>
+                    {record.url.endsWith('.pdf') ? (
+                      <div className="pdf-preview" style={{
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: '#f8f9fa'
+                      }}>
+                        <i className="fas fa-file-pdf" style={{ fontSize: '3rem', color: '#dc3545' }}></i>
+                        <span style={{ marginTop: '10px', color: '#495057' }}>PDF Document</span>
+                      </div>
+                    ) : (
+                      <img 
+                        src={record.url} 
+                        alt="Record" 
+                        className="record-image"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover'
+                        }}
+                      />
+                    )}
                   </div>
-                  <div className="record-name">
-                    <i className="fas fa-file"></i>
-                    <span>{record.fileName}</span>
-                  </div>
-                  <div className="record-details">
-                    <div className="record-date">
-                      <i className="fas fa-calendar"></i>
+                  <div className="record-info" style={{ padding: '15px' }}>
+                    <div className="record-type" style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      marginBottom: '10px'
+                    }}>
+                      <i className="fas fa-tag" style={{ color: '#6c757d', marginRight: '8px' }}></i>
+                      <span style={{ 
+                        textTransform: 'capitalize',
+                        color: '#495057',
+                        fontWeight: '500'
+                      }}>
+                        {record.type}
+                      </span>
+                    </div>
+                    <div className="record-date" style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      color: '#6c757d',
+                      fontSize: '0.9rem'
+                    }}>
+                      <i className="fas fa-calendar" style={{ marginRight: '8px' }}></i>
                       <span>{new Date(record.uploadDate).toLocaleDateString()}</span>
                     </div>
-                    <div className="record-size">
-                      <i className="fas fa-weight"></i>
-                      <span>{formatFileSize(record.fileSize)}</span>
-                    </div>
                   </div>
-                  <div className="record-actions">
-                    <a 
-                      href={record.url} 
-                      target="_blank" 
+                  <div className="record-actions" style={{
+                    padding: '15px',
+                    borderTop: '1px solid #e9ecef',
+                    display: 'flex',
+                    gap: '10px'
+                  }}>
+                    <a
+                      href={record.url}
+                      target="_blank"
                       rel="noopener noreferrer"
-                      className="view-button"
+                      className="btn btn-primary"
+                      style={{ flex: 1 }}
                     >
                       <i className="fas fa-eye"></i> View
                     </a>
-                    <button 
-                      onClick={() => deleteRecord(record)}
-                      className="delete-button"
+                    <button
+                      onClick={() => handleDeleteRecord(record.url)}
+                      className="btn btn-danger"
+                      style={{ flex: 1 }}
                     >
                       <i className="fas fa-trash"></i> Delete
                     </button>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-export default Dashboard; 
+const CARD_STYLE = {
+  background: '#fff',
+  borderRadius: 14,
+  boxShadow: '0 2px 12px rgba(60,60,120,0.07)',
+  padding: 24,
+  marginBottom: 18,
+  flex: 1,
+  minWidth: 220,
+  maxWidth: 340,
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'flex-start',
+  alignItems: 'stretch',
+};

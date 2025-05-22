@@ -12,9 +12,13 @@ const ProfileSetup = ({ onProfileComplete }) => {
     lastName: '',
     dateOfBirth: '',
     phoneNumber: '',
-    caretakerPhone: ''
+    caretakerPhone: '',
+    caretakerEmail: '',
+    profileCompleted: true
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const handleChange = (e) => {
     setFormData({
@@ -25,7 +29,8 @@ const ProfileSetup = ({ onProfileComplete }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    setLoading(true);
+    setError(null);
     
     try {
       const user = auth.currentUser;
@@ -34,11 +39,15 @@ const ProfileSetup = ({ onProfileComplete }) => {
         return;
       }
 
+      // Validate email format if caretaker email is provided
+      if (formData.caretakerEmail && !isValidEmail(formData.caretakerEmail)) {
+        throw new Error('Please enter a valid caretaker email address');
+      }
+
       // Save profile data to Firestore
       await setDoc(doc(db, 'users', user.uid), {
         ...formData,
         email: user.email,
-        profileCompleted: true,
         createdAt: new Date().toISOString()
       });
 
@@ -53,11 +62,19 @@ const ProfileSetup = ({ onProfileComplete }) => {
       setTimeout(() => {
         navigate('/dashboard', { replace: true });
       }, 1000);
-    } catch (error) {
-      toast.error('Error setting up profile: ' + error.message);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      setError(err.message);
+      toast.error(err.message);
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
+  };
+
+  // Email validation function
+  const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
   };
 
   return (
@@ -146,14 +163,30 @@ const ProfileSetup = ({ onProfileComplete }) => {
             />
           </div>
 
+          <div className="form-group">
+            <label htmlFor="caretakerEmail">
+              <i className="fas fa-envelope"></i> Caretaker's Email (Optional)
+            </label>
+            <input
+              type="email"
+              id="caretakerEmail"
+              name="caretakerEmail"
+              value={formData.caretakerEmail}
+              onChange={handleChange}
+              placeholder="Enter caretaker's email address"
+            />
+          </div>
+
+          {error && <div className="alert alert-danger">{error}</div>}
+
           <button 
             type="submit" 
             className="auth-button"
-            disabled={isSubmitting}
+            disabled={loading}
           >
-            {isSubmitting ? (
+            {loading ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i> Setting up profile...
+                <i className="fas fa-spinner fa-spin"></i> Saving...
               </>
             ) : (
               <>

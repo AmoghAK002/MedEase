@@ -13,6 +13,8 @@ import Login from "./components/login.js";
 import SignUp from "./components/register.js";
 import Dashboard from "./components/Dashboard.js";
 import ProfileSetup from "./components/ProfileSetup.js";
+import ForgotPassword from "./components/ForgotPassword.js";
+import FloatingChatIcon from "./components/FloatingChatIcon.js";
 
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -77,6 +79,7 @@ function App() {
           />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<SignUp />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route
             path="/profile-setup"
             element={
@@ -106,6 +109,7 @@ function App() {
             }
           />
         </Routes>
+        {user && profileCompleted && <FloatingChatIcon />}
         <ToastContainer
           position="top-right"
           autoClose={3000}
