@@ -15,12 +15,12 @@ import Dashboard from "./components/Dashboard.js";
 import ProfileSetup from "./components/ProfileSetup.js";
 import ForgotPassword from "./components/ForgotPassword.js";
 import FloatingChatIcon from "./components/FloatingChatIcon.js";
+import GlobalReminders from "./components/GlobalReminders.js";
 
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { auth } from "./firebase";
+import { auth, db, COLLECTIONS } from "./firebase";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "./firebase";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -32,7 +32,7 @@ function App() {
       setUser(user);
       if (user) {
         try {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
+          const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, user.uid));
           const userData = userDoc.data();
           setProfileCompleted(userDoc.exists() && userData?.profileCompleted);
         } catch (error) {
@@ -109,7 +109,12 @@ function App() {
             }
           />
         </Routes>
-        {user && profileCompleted && <FloatingChatIcon />}
+        {user && profileCompleted && (
+          <>
+            <FloatingChatIcon />
+            <GlobalReminders />
+          </>
+        )}
         <ToastContainer
           position="top-right"
           autoClose={3000}

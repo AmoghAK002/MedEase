@@ -5,6 +5,10 @@ import { toast } from 'react-toastify';
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import Logo from './Logo';
 import RefillReminders from './RefillReminders';
+import Login from './login';
+import SignUp from './register';
+import ForgotPassword from './ForgotPassword';
+import FloatingChatIcon from './FloatingChatIcon';
 
 // Health facts array
 const healthFacts = [
@@ -477,7 +481,7 @@ const Dashboard = () => {
             <li className={activeTab === 'therapy' ? 'active' : ''}>
               <Link to="/dashboard/therapy">
                 <i className="fas fa-brain"></i>
-                <span>Mental Health</span>
+                <span>Health & Wellness</span>
               </Link>
             </li>
             <li className={activeTab === 'refill' ? 'active' : ''}>
@@ -515,7 +519,7 @@ export default Dashboard;
 function DashboardHome({ userProfile, bmiData, healthFact }) {
   const [stats, setStats] = useState({
     documentCount: 0,
-    reminderCount: 0
+    todayReminderCount: 0
   });
 
   useEffect(() => {
@@ -526,9 +530,27 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
           const userDoc = await getDoc(doc(db, "users", user.uid));
           if (userDoc.exists()) {
             const userData = userDoc.data();
+            const medicineReminders = userData?.medicineReminders || [];
+            const today = new Date();
+            const currentTime = today.toTimeString().slice(0, 5);
+            const currentDate = today.toISOString().split('T')[0];
+
+            const dueTodayCount = medicineReminders.filter(reminder => {
+                const reminderDate = reminder.startDate;
+                const endDate = reminder.endDate;
+                const reminderTime = reminder.time;
+                const lastTakenDate = reminder.lastTaken ? new Date(reminder.lastTaken).toISOString().split('T')[0] : null;
+
+                const isActive = (!endDate || endDate >= currentDate) && reminderDate <= currentDate;
+
+                const isDueToday = isActive && reminderTime <= currentTime && lastTakenDate !== currentDate;
+
+                return isDueToday;
+            }).length;
+
             setStats({
               documentCount: userData.medicalRecords?.length || 0,
-              reminderCount: userData.reminders?.length || 0
+              todayReminderCount: dueTodayCount
             });
           }
         }
@@ -539,7 +561,7 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
     };
 
     fetchUserStats();
-  }, []);
+  }, [userProfile]);
 
   return (
     <div className="dashboard-home">
@@ -556,7 +578,7 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
         <div className="stat-card">
           <i className="fas fa-pills"></i>
           <h3>Today's Reminders</h3>
-          <p>{stats.reminderCount} medications</p>
+          <p>{stats.todayReminderCount} medications</p>
         </div>
         <div className="stat-card">
           <i className="fas fa-file-medical"></i>
@@ -580,11 +602,11 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
                 <small>{stats.documentCount} documents</small>
               </div>
             )}
-            {stats.reminderCount > 0 && (
+            {stats.todayReminderCount > 0 && (
               <div className="activity-item">
                 <i className="fas fa-bell"></i>
                 <span>Active reminders</span>
-                <small>{stats.reminderCount} medications</small>
+                <small>{stats.todayReminderCount} medications</small>
               </div>
             )}
           </div>
@@ -723,7 +745,7 @@ function MedicineRemindersSection() {
   useEffect(() => {
     // Initialize audio
     audioRef.current = new Audio('/notification.mp3');
-    audioRef.current.load(); // Preload the audio
+    audioRef.current.load();
 
     // Request notification permission
     if ('Notification' in window) {
@@ -736,7 +758,6 @@ function MedicineRemindersSection() {
       }
     }
 
-    // Cleanup function
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -750,9 +771,7 @@ function MedicineRemindersSection() {
   // Function to play notification sound
   const playNotificationSound = useCallback(() => {
     if (audioRef.current) {
-      // Reset the audio to start
       audioRef.current.currentTime = 0;
-      // Play the sound
       audioRef.current.play().catch(error => {
         console.warn('Could not play notification sound:', error);
       });
@@ -761,17 +780,13 @@ function MedicineRemindersSection() {
 
   // Function to show reminder notification
   const showReminderNotification = useCallback((reminder) => {
-    // Clear any existing notification timeout
     if (notificationTimeoutRef.current) {
       clearTimeout(notificationTimeoutRef.current);
     }
 
     setDueReminder(reminder);
-    
-    // Play notification sound
     playNotificationSound();
     
-    // Show browser notification
     if ('Notification' in window && notificationPermission === 'granted') {
       const notification = new Notification('Time to Take Your Medicine!', {
         body: `Please take ${reminder.medicine} - ${reminder.dosage}`,
@@ -786,10 +801,10 @@ function MedicineRemindersSection() {
       };
     }
 
-    // Set up periodic sound reminder every 5 minutes until taken
+    // Play sound every 5 minutes until taken
     notificationTimeoutRef.current = setInterval(() => {
       playNotificationSound();
-    }, 300000); // 5 minutes
+    }, 300000);
   }, [notificationPermission, playNotificationSound]);
 
   // Check for due reminders
@@ -839,16 +854,14 @@ function MedicineRemindersSection() {
       const now = new Date();
       const currentDate = now.toISOString().split('T')[0];
 
-      // Get current reminders
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const userData = userDoc.data();
-      const currentReminders = userData?.reminders || [];
+      const currentReminders = userData?.medicineReminders || [];
 
-      // Update the reminder
       const updatedReminders = currentReminders.map(reminder => {
         if (reminder.id === reminderId) {
           const lastTakenDate = reminder.lastTaken ? reminder.lastTaken.split('T')[0] : null;
-          const streak = lastTakenDate === currentDate ? reminder.streak : reminder.streak + 1;
+          const streak = lastTakenDate === currentDate ? reminder.streak : (reminder.streak || 0) + 1;
           
           return {
             ...reminder,
@@ -863,19 +876,26 @@ function MedicineRemindersSection() {
 
       // Update Firestore
       await updateDoc(doc(db, "users", user.uid), {
-        reminders: updatedReminders
+        medicineReminders: updatedReminders
       });
 
-      // Update local state
+      // Update both local states
       setReminders(updatedReminders);
       setDueReminder(null);
 
-      // Clear notification timeout
       if (notificationTimeoutRef.current) {
         clearTimeout(notificationTimeoutRef.current);
       }
 
-      toast.success('Medication marked as taken!');
+      // Show success message
+      toast.success('Medication marked as taken!', {
+        position: "top-center",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
     } catch (error) {
       console.error("Error marking reminder as taken:", error);
       toast.error("Error updating reminder status");
@@ -891,8 +911,7 @@ function MedicineRemindersSection() {
           const userDoc = await getDoc(doc(db, "users", user.uid));
           if (userDoc.exists()) {
             const userData = userDoc.data();
-            const userReminders = userData.reminders || [];
-            // Filter out expired reminders
+            const userReminders = userData.medicineReminders || [];
             const currentDate = new Date().toISOString().split('T')[0];
             const activeReminders = userReminders.filter(reminder => 
               !reminder.endDate || reminder.endDate >= currentDate
@@ -907,27 +926,6 @@ function MedicineRemindersSection() {
     };
     fetchReminders();
   }, []);
-
-  // Save reminders whenever they change
-  useEffect(() => {
-    const saveReminders = async () => {
-      try {
-        const user = auth.currentUser;
-        if (user) {
-          await updateDoc(doc(db, "users", user.uid), {
-            reminders: reminders
-          });
-        }
-      } catch (error) {
-        console.error("Error saving reminders:", error);
-        toast.error("Error saving reminders");
-      }
-    };
-
-    if (reminders.length > 0) {
-      saveReminders();
-    }
-  }, [reminders]);
 
   const addReminder = async () => {
     if (!newReminder.medicine || !newReminder.dosage || newReminder.times.some(time => !time)) {
@@ -961,14 +959,14 @@ function MedicineRemindersSection() {
       // Get current reminders
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const userData = userDoc.data();
-      const currentReminders = userData?.reminders || [];
+      const currentReminders = userData?.medicineReminders || [];
 
       // Combine old and new reminders
       const updatedReminders = [...currentReminders, ...newReminders];
 
       // Update Firestore
       await updateDoc(doc(db, "users", user.uid), {
-        reminders: updatedReminders
+        medicineReminders: updatedReminders
       });
 
       // Update local state
@@ -1001,14 +999,14 @@ function MedicineRemindersSection() {
       // Get current reminders
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const userData = userDoc.data();
-      const currentReminders = userData?.reminders || [];
+      const currentReminders = userData?.medicineReminders || [];
 
       // Remove the reminder
       const updatedReminders = currentReminders.filter(reminder => reminder.id !== id);
 
       // Update Firestore
       await updateDoc(doc(db, "users", user.uid), {
-        reminders: updatedReminders
+        medicineReminders: updatedReminders
       });
 
       // Update local state
@@ -1024,7 +1022,7 @@ function MedicineRemindersSection() {
     <div className="reminders-section">
       <div className="section-header">
         <h2><i className="fas fa-pills"></i> Medicine Reminders</h2>
-        <p className="section-description">Manage your medication schedule and never miss a dose</p>
+        <p className="section-description">Set up your medication schedule and never miss a dose</p>
       </div>
       
       <div className="reminders-container">
@@ -1046,7 +1044,7 @@ function MedicineRemindersSection() {
               </div>
 
               <div className="form-group">
-                <label><i className="fas fa-sync"></i> Frequency</label>
+                <label><i className="fas fa-sync"></i> How many times a day?</label>
                 <select
                   value={newReminder.frequency}
                   onChange={(e) => {
@@ -1111,22 +1109,22 @@ function MedicineRemindersSection() {
             </div>
 
             <div className="form-group">
-              <label><i className="fas fa-balance-scale"></i> Dosage</label>
+              <label><i className="fas fa-balance-scale"></i> How much to take?</label>
               <input
                 type="text"
                 value={newReminder.dosage}
                 onChange={(e) => setNewReminder({ ...newReminder, dosage: e.target.value })}
-                placeholder="Enter dosage (e.g., 1 tablet)"
+                placeholder="Example: 1 tablet, 2 capsules, etc."
                 className="form-control"
               />
             </div>
 
             <div className="form-group">
-              <label><i className="fas fa-sticky-note"></i> Notes (Optional)</label>
+              <label><i className="fas fa-sticky-note"></i> Special Instructions (Optional)</label>
               <textarea
                 value={newReminder.notes}
                 onChange={(e) => setNewReminder({ ...newReminder, notes: e.target.value })}
-                placeholder="Add any special instructions or notes"
+                placeholder="Add any special instructions (e.g., take with food, after meals)"
                 className="form-control"
                 rows="3"
               />
@@ -1508,12 +1506,344 @@ function ProfileSection({ userProfile, setUserProfile }) {
 
 // Therapy Section Component
 function TherapySection() {
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+
+  const healthVideos = [
+    {
+      id: 1,
+      title: "Understanding Mental Health",
+      description: "A comprehensive guide to understanding mental health and well-being.",
+      thumbnail: "https://img.youtube.com/vi/wOGqlVqyvCM/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/wOGqlVqyvCM",
+      category: "Mental Health"
+    },
+    {
+      id: 2,
+      title: "Mental Health Awareness",
+      description: "Important information about mental health awareness and support.",
+      thumbnail: "https://img.youtube.com/vi/C2dum954yIg/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/C2dum954yIg",
+      category: "Mental Health"
+    },
+    {
+      id: 3,
+      title: "Nutrition Basics",
+      description: "Essential guide to understanding nutrition fundamentals.",
+      thumbnail: "https://img.youtube.com/vi/-e-4Kx5px_I/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/-e-4Kx5px_I",
+      category: "Nutrition"
+    },
+    {
+      id: 4,
+      title: "Healthy Eating Habits",
+      description: "Learn about maintaining healthy eating habits for better nutrition.",
+      thumbnail: "https://img.youtube.com/vi/c06dTj0v0sM/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/c06dTj0v0sM",
+      category: "Nutrition"
+    },
+    {
+      id: 5,
+      title: "Balanced Diet Guide",
+      description: "Comprehensive guide to creating and maintaining a balanced diet.",
+      thumbnail: "https://img.youtube.com/vi/YAmzlo5pbN8/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/YAmzlo5pbN8",
+      category: "Nutrition"
+    },
+    
+     {
+      id: 12,
+      title: "Proper Handwashing",
+      description: "Learn the correct way to wash your hands to prevent the spread of germs.",
+      thumbnail: "https://img.youtube.com/vi/UxskKQ9WOTE/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/UxskKQ9WOTE",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 13,
+      title: "Dental Hygiene Tips",
+      description: "Essential tips for maintaining good oral health.",
+      thumbnail: "https://img.youtube.com/vi/zh7CACofsio/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/zh7CACofsio",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 14,
+      title: "Importance of Sleep",
+      description: "Understanding why sleep is crucial for your health and well-being.",
+      thumbnail: "https://img.youtube.com/vi/In_sGALiccs/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/In_sGALiccs",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 15,
+      title: "Importance of Physical Activity",
+      description: "Understand the importance of physical activity for overall health.",
+      thumbnail: "https://img.youtube.com/vi/D411IY14pCI/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/D411IY14pCI",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 16,
+      title: "Understanding Vaccinations",
+      description: "Learn about the importance of vaccinations for preventing diseases.",
+      thumbnail: "https://img.youtube.com/vi/12Lwmd_Dq4c/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/12Lwmd_Dq4c",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 17,
+      title: "Sun Safety",
+      description: "Tips for protecting your skin from the sun's harmful rays.",
+      thumbnail: "https://img.youtube.com/vi/3PmVJQUCm4E/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/3PmVJQUCm4E",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 18,
+      title: "Managing Stress",
+      description: "Effective techniques for managing stress in your daily life.",
+      thumbnail: "https://img.youtube.com/vi/01COSszay_g/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/01COSszay_g",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 19,
+      title: "Basic First Aid",
+      description: "Learn essential first aid skills for common injuries.",
+      thumbnail: "https://img.youtube.com/vi/OdRM9chZHaY/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/OdRM9chZHaY",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 20,
+      title: "Healthy Living Habits",
+      description: "Simple habits for a healthier lifestyle.",
+      thumbnail: "https://img.youtube.com/vi/jLmN0ts0k4o/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/jLmN0ts0k4o",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 21,
+      title: "Boosting Immunity",
+      description: "Tips and strategies for strengthening your immune system.",
+      thumbnail: "https://img.youtube.com/vi/XVYn2AoSneA/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/XVYn2AoSneA",
+      category: "Health and Hygiene"
+    },
+    {
+      id: 22,
+      title: "Beginner Full Body Workout",
+      description: "A simple full body workout routine for beginners.",
+      thumbnail: "https://img.youtube.com/vi/-_VhU5rqyko/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/-_VhU5rqyko",
+      category: "Fitness"
+    },
+    {
+      id: 23,
+      title: "Morning Yoga Routine",
+      description: "A gentle yoga routine to start your day.",
+      thumbnail: "https://img.youtube.com/vi/h2KGe11oyEI/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/h2KGe11oyEI",
+      category: "Fitness"
+    },
+    {
+      id: 25,
+      title: "Strength Training Basics",
+      description: "Fundamental strength training exercises.",
+      thumbnail: "https://img.youtube.com/vi/d737O-vv5TY/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/d737O-vv5TY",
+      category: "Fitness"
+    },
+    {
+      id: 26,
+      title: "Flexibility Exercises",
+      description: "Exercises to improve your flexibility.",
+      thumbnail: "https://img.youtube.com/vi/x6wiDew4sYU/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/x6wiDew4sYU",
+      category: "Fitness"
+    },    {
+      id: 27,
+      title: "High-Intensity Interval Training (HIIT)",
+      description: "An intense HIIT workout routine.",
+      thumbnail: "https://img.youtube.com/vi/Wa8Fk8TaXPk/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/Wa8Fk8TaXPk",
+      category: "Fitness"
+    },    {
+      id: 28,
+      title: "Workout Motivation",
+      description: "Tips and inspiration to stay motivated with your workouts.",
+      thumbnail: "https://img.youtube.com/vi/IL3E0SGEWl0/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/IL3E0SGEWl0",
+      category: "Fitness"
+    },    {
+      id: 29,
+      title: "Post-Workout Stretching",
+      description: "Stretches to do after your workout.",
+      thumbnail: "https://img.youtube.com/vi/aX5FP3odWL4/maxresdefault.jpg",
+      url: "https://www.youtube.com/embed/aX5FP3odWL4",
+      category: "Fitness"
+    }
+  ];
+
+  const categories = ['All', ...new Set(healthVideos.map(video => video.category))];
+
+  const filteredVideos = selectedCategory === 'All' 
+    ? healthVideos 
+    : healthVideos.filter(video => video.category === selectedCategory);
+
   return (
-    <div className="section">
-      <h2>Mental Health Resources</h2>
-      <div className="therapy-content">
-        {/* Therapy content will go here */}
+    <div className="section therapy-section" style={{ padding: '20px' }}>
+      <div className="section-header" style={{ marginBottom: '30px' }}>
+        <h2><i className="fas fa-brain"></i> Health & Wellness Resources</h2>
+        <p className="section-description">Access helpful videos and resources to support your health and well-being</p>
       </div>
+
+      <div className="category-filter" style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {categories.map(category => (
+            <button
+              key={category}
+              onClick={() => setSelectedCategory(category)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '20px',
+                border: 'none',
+                background: selectedCategory === category ? '#2563eb' : '#f3f4f6',
+                color: selectedCategory === category ? 'white' : '#374151',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="videos-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+        gap: '20px',
+        marginBottom: '30px'
+      }}>
+        {filteredVideos.map((video) => (
+          <div key={video.id} className="video-card" style={{
+            background: 'white',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+            transition: 'transform 0.3s ease',
+            cursor: 'pointer'
+          }}
+          onClick={() => setSelectedVideo(video)}>
+            <div className="video-thumbnail" style={{ position: 'relative', paddingTop: '56.25%' }}>
+              <img
+                src={video.thumbnail}
+                alt={video.title}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover'
+                }}
+              />
+              <div className="play-button" style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                background: 'rgba(0,0,0,0.7)',
+                width: '60px',
+                height: '60px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <i className="fas fa-play" style={{ color: 'white', fontSize: '24px' }}></i>
+              </div>
+            </div>
+            <div className="video-info" style={{ padding: '15px' }}>
+              <div style={{ 
+                display: 'inline-block',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                background: '#e5e7eb',
+                fontSize: '12px',
+                marginBottom: '8px'
+              }}>
+                {video.category}
+              </div>
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', color: '#333' }}>{video.title}</h3>
+              <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>{video.description}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {selectedVideo && (
+        <div className="video-modal" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div className="video-container" style={{
+            width: '90%',
+            maxWidth: '800px',
+            background: 'white',
+            borderRadius: '12px',
+            overflow: 'hidden'
+          }}>
+            <div className="video-header" style={{
+              padding: '15px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              borderBottom: '1px solid #eee'
+            }}>
+              <h3 style={{ margin: 0 }}>{selectedVideo.title}</h3>
+              <button
+                onClick={() => setSelectedVideo(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: '#666'
+                }}
+              >
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="video-frame" style={{ position: 'relative', paddingTop: '56.25%' }}>
+              <iframe
+                src={selectedVideo.url}
+                title={selectedVideo.title}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  border: 'none'
+                }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              ></iframe>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

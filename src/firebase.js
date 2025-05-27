@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getAnalytics } from 'firebase/analytics';
 
 const firebaseConfig = {
@@ -13,8 +13,51 @@ const firebaseConfig = {
   measurementId: "G-R2EEB4H2C1"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const analytics = getAnalytics(app);
+
+// Initialize services
+const auth = getAuth(app);
+const db = getFirestore(app);
+const analytics = getAnalytics(app);
+
+// Enable offline persistence
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code === 'failed-precondition') {
+    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+  } else if (err.code === 'unimplemented') {
+    console.warn('The current browser does not support persistence.');
+  }
+});
+
+// Collection names
+const COLLECTIONS = {
+  USERS: 'users',
+  REFILL_REMINDERS: 'refillReminders',
+  MEDICAL_RECORDS: 'medicalRecords',
+  HEALTH_METRICS: 'healthMetrics'
+};
+
+// Security rules (these should be set in Firebase Console)
+/*
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User profile data
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
+      
+      // Nested refill reminders
+      match /refillReminders/{reminderId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}
+*/
+
+export { auth, db, analytics, COLLECTIONS };
+
 export default app;
