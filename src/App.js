@@ -16,6 +16,7 @@ import ProfileSetup from "./components/ProfileSetup.js";
 import ForgotPassword from "./components/ForgotPassword.js";
 import FloatingChatIcon from "./components/FloatingChatIcon.js";
 import GlobalReminders from "./components/GlobalReminders.js";
+import CaretakerDashboard from "./components/CaretakerDashboard";
 
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -103,6 +104,16 @@ function App() {
                 ) : (
                   <Navigate to="/profile-setup" replace />
                 )
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+          <Route
+            path="/caretaker-dashboard"
+            element={
+              user ? (
+                <CaretakerDashboard />
               ) : (
                 <Navigate to="/login" replace />
               )

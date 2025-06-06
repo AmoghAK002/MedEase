@@ -11,6 +11,7 @@ const ProfileSetup = ({ onProfileComplete }) => {
     firstName: '',
     lastName: '',
     dateOfBirth: '',
+    age: '',
     phoneNumber: '',
     caretakerPhone: '',
     caretakerEmail: '',
@@ -25,6 +26,19 @@ const ProfileSetup = ({ onProfileComplete }) => {
       ...formData,
       [e.target.name]: e.target.value
     });
+  };
+
+  // Helper to calculate age from dateOfBirth
+  const calculateAge = (dob) => {
+    if (!dob) return '';
+    const today = new Date();
+    const birthDate = new Date(dob);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
   };
 
   const handleSubmit = async (e) => {
@@ -44,12 +58,32 @@ const ProfileSetup = ({ onProfileComplete }) => {
         throw new Error('Please enter a valid caretaker email address');
       }
 
+      // Prevent caretaker's phone/email from being the same as user's
+      if (formData.phoneNumber && formData.caretakerPhone && formData.phoneNumber === formData.caretakerPhone) {
+        throw new Error("Caretaker's phone number cannot be the same as your phone number");
+      }
+      if (user.email && formData.caretakerEmail && user.email === formData.caretakerEmail) {
+        throw new Error("Caretaker's email cannot be the same as your email");
+      }
+
+      // If user is below 20, age is required
+      const age = calculateAge(formData.dateOfBirth);
+      if (age < 20 && (!formData.age || isNaN(formData.age) || formData.age < 0)) {
+        throw new Error('Please enter a valid age (required for users below 20)');
+      }
+
       // Save profile data to Firestore
-      await setDoc(doc(db, 'users', user.uid), {
+      const userRef = doc(db, 'users', user.uid);
+      const existingDoc = await getDoc(userRef);
+      const existingUserData = existingDoc.exists() ? existingDoc.data() : {};
+      await setDoc(userRef, {
+        ...existingUserData,
         ...formData,
+        age: age < 20 ? formData.age : undefined,
         email: user.email,
-        createdAt: new Date().toISOString()
-      });
+        createdAt: existingUserData.createdAt || new Date().toISOString(),
+        profileCompleted: true
+      }, { merge: true });
 
       // Update local state through the callback
       if (onProfileComplete) {
@@ -132,6 +166,24 @@ const ProfileSetup = ({ onProfileComplete }) => {
               required
             />
           </div>
+
+          {calculateAge(formData.dateOfBirth) !== '' && calculateAge(formData.dateOfBirth) < 20 && (
+            <div className="form-group">
+              <label htmlFor="age">
+                <i className="fas fa-user-clock"></i> Age (required if under 20)
+              </label>
+              <input
+                type="number"
+                id="age"
+                name="age"
+                value={formData.age}
+                onChange={handleChange}
+                required
+                placeholder="Enter your age"
+                min="0"
+              />
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="phoneNumber">

@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
 import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { toast } from "react-toastify";
 import Logo from "./Logo";
 
@@ -11,13 +12,51 @@ function Login() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
+  const checkUserRole = async (user) => {
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const userDoc = await getDoc(userRef);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        console.log("User data:", userData); // Debug log
+        
+        // Check if profile is completed by verifying required fields
+        const isProfileComplete = userData.firstName && 
+                                userData.lastName && 
+                                userData.dateOfBirth && 
+                                userData.phoneNumber && 
+                                userData.caretakerPhone;
+        
+        if (isProfileComplete) {
+          console.log("Profile is complete, navigating to dashboard");
+          navigate("/dashboard");
+        } else {
+          console.log("Profile is incomplete, navigating to profile setup");
+          navigate("/profile-setup");
+        }
+      } else {
+        // New user - set role as patient
+        await setDoc(userRef, {
+          email: user.email,
+          role: "patient",
+          createdAt: new Date().toISOString()
+        });
+        navigate("/profile-setup");
+      }
+    } catch (error) {
+      console.error("Error checking user role:", error);
+      toast.error("Error checking user role");
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       setLoading(true);
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       toast.success("Logged in successfully!");
-      navigate("/dashboard");
+      await checkUserRole(userCredential.user);
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -28,9 +67,9 @@ function Login() {
   const handleGoogleSignIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const userCredential = await signInWithPopup(auth, provider);
       toast.success("Logged in successfully!");
-      navigate("/dashboard");
+      await checkUserRole(userCredential.user);
     } catch (error) {
       toast.error(error.message);
     }

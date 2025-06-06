@@ -25,13 +25,14 @@ function SignUp() {
       const user = userCredential.user;
       
       // Store user data in Firestore
-      await setDoc(doc(db, "Users", user.uid), {
+      await setDoc(doc(db, "users", user.uid), {
         email: email,
         firstName: firstName,
         lastName: lastName,
         createdAt: new Date().toISOString(),
         photo: "https://www.gravatar.com/avatar/" + user.uid + "?d=mp",
-        role: "patient"
+        role: "patient",
+        profileCompleted: false
       });
 
       toast.success("Account created successfully!");

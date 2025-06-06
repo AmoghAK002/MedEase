@@ -1,14 +1,21 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { auth, db } from '../firebase';
-import { useNavigate, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { toast } from 'react-toastify';
-import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
-import Logo from './Logo';
-import RefillReminders from './RefillReminders';
-import Login from './login';
-import SignUp from './register';
-import ForgotPassword from './ForgotPassword';
-import FloatingChatIcon from './FloatingChatIcon';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { auth, db, COLLECTIONS } from "../firebase";
+import {
+  useNavigate,
+  Routes,
+  Route,
+  Link,
+  useLocation,
+} from "react-router-dom";
+import { toast } from "react-toastify";
+import { doc, getDoc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
+import Logo from "./Logo";
+import RefillReminders from "./RefillReminders";
+import Login from "./login";
+import SignUp from "./register";
+import ForgotPassword from "./ForgotPassword";
+import FloatingChatIcon from "./FloatingChatIcon";
+import HealthVitalsTracker from './HealthVitalsTracker';
 
 // Health facts array
 const healthFacts = [
@@ -26,7 +33,7 @@ const healthFacts = [
   "Regular dental check-ups are important for overall health.",
   "Laughing can boost your immune system.",
   "Taking breaks from screens can reduce eye strain.",
-  "Regular hand washing can prevent many illnesses."
+  "Regular hand washing can prevent many illnesses.",
 ];
 
 // Add these styles at the top of the file
@@ -379,18 +386,36 @@ const styleSheet = document.createElement("style");
 styleSheet.innerText = reminderStyles;
 document.head.appendChild(styleSheet);
 
+// Function to determine refill urgency level (copied from RefillReminders.js)
+const getUrgencyLevel = (refillDate) => {
+  if (!refillDate) return "low";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const refill = new Date(refillDate);
+  refill.setHours(0, 0, 0, 0);
+  const diff = (refill.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+
+  if (diff < 0) return "critical";
+  if (diff <= 1) return "critical";
+  if (diff <= 2) return "urgent";
+  if (diff <= 3) return "warning"; // Using DAYS_BEFORE_REFILL = 3
+  return "low";
+};
+
 const Dashboard = () => {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState("dashboard");
   const [bmiData, setBmiData] = useState(null);
-  const [healthFact, setHealthFact] = useState('');
+  const [healthFact, setHealthFact] = useState("");
   const [userProfile, setUserProfile] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // <-- Add this
   const navigate = useNavigate();
   const location = useLocation();
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
   useEffect(() => {
     // Set active tab based on current location
-    const path = location.pathname.split('/').pop();
-    setActiveTab(path || 'dashboard');
+    const path = location.pathname.split("/").pop();
+    setActiveTab(path || "dashboard");
   }, [location]);
 
   useEffect(() => {
@@ -430,83 +455,206 @@ const Dashboard = () => {
   const handleLogout = async () => {
     try {
       await auth.signOut();
-      navigate('/login');
-      toast.success('Logged out successfully!');
+      navigate("/login");
+      toast.success("Logged out successfully!");
     } catch (error) {
       toast.error(error.message);
     }
   };
 
+  const isDashboardHome =
+    location.pathname === "/dashboard" || location.pathname === "/dashboard/";
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Prevent background scroll when sidebar is open on mobile
+  useEffect(() => {
+    if (isMobile && sidebarOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isMobile, sidebarOpen]);
+
   return (
     <div className="dashboard-container">
-      <div className="sidebar">
-        <div className="user-info">
-          <Logo size="large" />
-          {userProfile && (
-            <p className="welcome-text">Welcome, {userProfile.firstName}!</p>
+      {/* Hamburger for mobile */}
+      {isMobile && !sidebarOpen && (
+        <button
+          className="sidebar-hamburger"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open sidebar"
+        >
+          <i className="fas fa-bars"></i>
+        </button>
+      )}
+      {/* Sidebar overlay for mobile */}
+      {sidebarOpen && isMobile && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+        ></div>
+      )}
+      {/* Sidebar: only show on desktop or when open on mobile */}
+      {(!isMobile || sidebarOpen) && (
+        <div className={`sidebar${sidebarOpen ? " open" : ""}`}>
+          {/* Mobile: Close button, logo, welcome text */}
+          {isMobile && (
+            <>
+              <button
+                className="sidebar-close-btn"
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Close sidebar"
+              >
+                <i className="fas fa-times"></i>
+              </button>
+              <div className="sidebar-logo-welcome">
+                <Logo size="large" />
+                {userProfile && (
+                  <div className="sidebar-welcome-text">
+                    Welcome, {userProfile.firstName}!
+                  </div>
+                )}
+              </div>
+            </>
           )}
+          {/* Desktop: Logo at top as before */}
+          {!isMobile && (
+            <div className="user-info">
+              <Logo size="large" />
+            </div>
+          )}
+          <nav>
+            <ul className="nav-links">
+              <li
+                className={activeTab === "dashboard" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard">
+                  <i className="fas fa-home"></i>
+                  <span>Dashboard</span>
+                </Link>
+              </li>
+              <li
+                className={activeTab === "profile" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/profile">
+                  <i className="fas fa-user"></i>
+                  <span>Profile</span>
+                </Link>
+              </li>
+              <li
+                className={activeTab === "medical-records" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/medical-records">
+                  <i className="fas fa-file-medical"></i>
+                  <span>Medical Records</span>
+                </Link>
+              </li>
+              <li
+                className={activeTab === "reminders" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/reminders">
+                  <i className="fas fa-bell"></i>
+                  <span>Medicine Reminders</span>
+                </Link>
+              </li>
+              <li
+                className={activeTab === "bmi" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/bmi">
+                  <i className="fas fa-weight"></i>
+                  <span>BMI Calculator</span>
+                </Link>
+              </li>
+              <li
+                className={activeTab === "therapy" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/therapy">
+                  <i className="fas fa-brain"></i>
+                  <span>Health & Wellness</span>
+                </Link>
+              </li>
+              <li
+                className={activeTab === "refill" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/refill">
+                  <i className="fas fa-capsules"></i>
+                  <span>Medication Refill</span>
+                </Link>
+              </li>
+              <li
+                className={activeTab === "vitals" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/vitals">
+                  <i className="fas fa-heartbeat"></i>
+                  <span>Health Vitals</span>
+                </Link>
+              </li>
+              <li
+                onClick={() => {
+                  handleLogout();
+                  setSidebarOpen(false);
+                }}
+                className="logout-btn"
+              >
+                <i className="fas fa-sign-out-alt"></i>
+                <span>Logout</span>
+              </li>
+            </ul>
+          </nav>
         </div>
-        <nav>
-          <ul className="nav-links">
-            <li className={activeTab === 'dashboard' ? 'active' : ''}>
-              <Link to="/dashboard">
-                <i className="fas fa-home"></i>
-                <span>Dashboard</span>
-              </Link>
-            </li>
-            <li className={activeTab === 'profile' ? 'active' : ''}>
-              <Link to="/dashboard/profile">
-                <i className="fas fa-user"></i>
-                <span>Profile</span>
-              </Link>
-            </li>
-            <li className={activeTab === 'medical-records' ? 'active' : ''}>
-              <Link to="/dashboard/medical-records">
-                <i className="fas fa-file-medical"></i>
-                <span>Medical Records</span>
-              </Link>
-            </li>
-            <li className={activeTab === 'reminders' ? 'active' : ''}>
-              <Link to="/dashboard/reminders">
-                <i className="fas fa-bell"></i>
-                <span>Medicine Reminders</span>
-              </Link>
-            </li>
-            <li className={activeTab === 'bmi' ? 'active' : ''}>
-              <Link to="/dashboard/bmi">
-                <i className="fas fa-weight"></i>
-                <span>BMI Calculator</span>
-              </Link>
-            </li>
-            <li className={activeTab === 'therapy' ? 'active' : ''}>
-              <Link to="/dashboard/therapy">
-                <i className="fas fa-brain"></i>
-                <span>Health & Wellness</span>
-              </Link>
-            </li>
-            <li className={activeTab === 'refill' ? 'active' : ''}>
-              <Link to="/dashboard/refill">
-                <i className="fas fa-capsules"></i>
-                <span>Medication Refill</span>
-              </Link>
-            </li>
-            <li onClick={handleLogout} className="logout-btn">
-              <i className="fas fa-sign-out-alt"></i>
-              <span>Logout</span>
-            </li>
-          </ul>
-        </nav>
-      </div>
-
+      )}
       <div className="main-content">
+        {/* Show welcome text only on desktop and only on dashboard home */}
+        {userProfile && isDashboardHome && !isMobile && (
+          <div className="dashboard-welcome-text">
+            Welcome, {userProfile.firstName}!
+          </div>
+        )}
         <Routes>
-          <Route path="/" element={<DashboardHome userProfile={userProfile} bmiData={bmiData} healthFact={healthFact} />} />
-          <Route path="/profile" element={<ProfileSection userProfile={userProfile} setUserProfile={setUserProfile} />} />
+          <Route
+            path="/"
+            element={
+              <DashboardHome
+                userProfile={userProfile}
+                bmiData={bmiData}
+                healthFact={healthFact}
+              />
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProfileSection
+                userProfile={userProfile}
+                setUserProfile={setUserProfile}
+              />
+            }
+          />
           <Route path="/medical-records" element={<MedicalRecordsSection />} />
           <Route path="/reminders" element={<MedicineRemindersSection />} />
-          <Route path="/bmi" element={<BMICalculatorSection onBMICalculated={setBmiData} />} />
+          <Route
+            path="/bmi"
+            element={<BMICalculatorSection onBMICalculated={setBmiData} />}
+          />
           <Route path="/therapy" element={<TherapySection />} />
           <Route path="/refill" element={<RefillReminders />} />
+          <Route path="/vitals" element={<HealthVitalsTracker />} />
         </Routes>
       </div>
     </div>
@@ -519,7 +667,9 @@ export default Dashboard;
 function DashboardHome({ userProfile, bmiData, healthFact }) {
   const [stats, setStats] = useState({
     documentCount: 0,
-    todayReminderCount: 0
+    todayReminderCount: 0,
+    totalReminderCount: 0,
+    criticalRefillCount: 0,
   });
 
   useEffect(() => {
@@ -531,26 +681,53 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
           if (userDoc.exists()) {
             const userData = userDoc.data();
             const medicineReminders = userData?.medicineReminders || [];
+            const refillReminders = userData?.refillReminders || [];
             const today = new Date();
             const currentTime = today.toTimeString().slice(0, 5);
-            const currentDate = today.toISOString().split('T')[0];
+            const currentDate = today.toISOString().split("T")[0];
 
-            const dueTodayCount = medicineReminders.filter(reminder => {
+            // Count medicine reminders due today
+            const dueTodayCount = medicineReminders.filter((reminder) => {
+              const reminderDate = reminder.startDate;
+              const endDate = reminder.endDate;
+              const reminderTime = reminder.time;
+              const lastTakenDate = reminder.lastTaken
+                ? new Date(reminder.lastTaken).toISOString().split("T")[0]
+                : null;
+
+              const isActive =
+                (!endDate || endDate >= currentDate) &&
+                reminderDate <= currentDate;
+              const isDueToday =
+                isActive &&
+                reminderTime <= currentTime &&
+                lastTakenDate !== currentDate;
+
+              return isDueToday;
+            }).length;
+
+            // Count total active medicine reminders
+            const totalActiveReminders = medicineReminders.filter(
+              (reminder) => {
                 const reminderDate = reminder.startDate;
                 const endDate = reminder.endDate;
-                const reminderTime = reminder.time;
-                const lastTakenDate = reminder.lastTaken ? new Date(reminder.lastTaken).toISOString().split('T')[0] : null;
+                return (
+                  (!endDate || endDate >= currentDate) &&
+                  reminderDate <= currentDate
+                );
+              }
+            ).length;
 
-                const isActive = (!endDate || endDate >= currentDate) && reminderDate <= currentDate;
-
-                const isDueToday = isActive && reminderTime <= currentTime && lastTakenDate !== currentDate;
-
-                return isDueToday;
-            }).length;
+            // Count critical refill reminders
+            const criticalRefillCount = refillReminders.filter(
+              (reminder) => getUrgencyLevel(reminder.refillDate) === "critical"
+            ).length;
 
             setStats({
               documentCount: userData.medicalRecords?.length || 0,
-              todayReminderCount: dueTodayCount
+              todayReminderCount: dueTodayCount,
+              totalReminderCount: totalActiveReminders,
+              criticalRefillCount: criticalRefillCount,
             });
           }
         }
@@ -576,9 +753,9 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
       </div>
       <div className="quick-stats">
         <div className="stat-card">
-          <i className="fas fa-pills"></i>
-          <h3>Today's Reminders</h3>
-          <p>{stats.todayReminderCount} medications</p>
+          <i className="fas fa-capsules"></i> {/* Changed icon for refill */}
+          <h3>Critical Refill Reminders</h3> {/* Changed title */}
+          <p>{stats.criticalRefillCount} medications</p> {/* Changed count */}
         </div>
         <div className="stat-card">
           <i className="fas fa-file-medical"></i>
@@ -588,7 +765,16 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
         <div className="stat-card">
           <i className="fas fa-weight"></i>
           <h3>BMI Status</h3>
-          <p>{bmiData ? `${bmiData.value} (${bmiData.category})` : 'Not calculated'}</p>
+          <p>
+            {bmiData
+              ? `${bmiData.value} (${bmiData.category})`
+              : "Not calculated"}
+          </p>
+        </div>
+        <div className="stat-card">
+          <i className="fas fa-bell"></i>
+          <h3>Active Medicine Reminders</h3> {/* Clarified title */}
+          <p>{stats.totalReminderCount} medications</p>
         </div>
       </div>
       <div className="dashboard-grid">
@@ -602,11 +788,20 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
                 <small>{stats.documentCount} documents</small>
               </div>
             )}
-            {stats.todayReminderCount > 0 && (
+            {/* Added Critical Refill Reminders activity item */}
+            {stats.criticalRefillCount > 0 && (
+              <div className="activity-item">
+                <i className="fas fa-capsules"></i> {/* Changed icon */}
+                <span>Critical refill needed</span> {/* Changed text */}
+                <small>{stats.criticalRefillCount} medications</small>{" "}
+                {/* Changed count */}
+              </div>
+            )}
+            {stats.totalReminderCount > 0 && (
               <div className="activity-item">
                 <i className="fas fa-bell"></i>
-                <span>Active reminders</span>
-                <small>{stats.todayReminderCount} medications</small>
+                <span>Active medicine reminders</span> {/* Clarified text */}
+                <small>{stats.totalReminderCount} medications</small>
               </div>
             )}
           </div>
@@ -625,11 +820,11 @@ function DashboardHome({ userProfile, bmiData, healthFact }) {
 
 // BMI Calculator Section Component
 function BMICalculatorSection({ onBMICalculated }) {
-  const [age, setAge] = useState('');
-  const [weight, setWeight] = useState('');
-  const [height, setHeight] = useState('');
+  const [age, setAge] = useState("");
+  const [weight, setWeight] = useState("");
+  const [height, setHeight] = useState("");
   const [bmi, setBMI] = useState(null);
-  const [bmiCategory, setBMICategory] = useState('');
+  const [bmiCategory, setBMICategory] = useState("");
 
   const calculateBMI = async () => {
     if (age && weight && height) {
@@ -641,13 +836,13 @@ function BMICalculatorSection({ onBMICalculated }) {
       // Determine BMI category
       let category;
       if (bmiValue < 18.5) {
-        category = 'Underweight';
+        category = "Underweight";
       } else if (bmiValue >= 18.5 && bmiValue < 25) {
-        category = 'Normal weight';
+        category = "Normal weight";
       } else if (bmiValue >= 25 && bmiValue < 30) {
-        category = 'Overweight';
+        category = "Overweight";
       } else {
-        category = 'Obese';
+        category = "Obese";
       }
       setBMICategory(category);
 
@@ -657,11 +852,15 @@ function BMICalculatorSection({ onBMICalculated }) {
         const bmiData = {
           value: bmiValue,
           category: category,
-          date: new Date().toISOString()
+          date: new Date().toISOString(),
         };
-        await setDoc(doc(db, "Users", user.uid), {
-          bmiData: bmiData
-        }, { merge: true });
+        await setDoc(
+          doc(db, "Users", user.uid),
+          {
+            bmiData: bmiData,
+          },
+          { merge: true }
+        );
         onBMICalculated(bmiData);
       }
     }
@@ -726,31 +925,32 @@ function BMICalculatorSection({ onBMICalculated }) {
 function MedicineRemindersSection() {
   const [reminders, setReminders] = useState([]);
   const [newReminder, setNewReminder] = useState({
-    medicine: '',
-    times: [''],
-    dosage: '',
-    frequency: 'daily',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: '',
-    notes: ''
+    medicine: "",
+    times: [""],
+    dosage: "",
+    frequency: "daily",
+    startDate: new Date().toISOString().split("T")[0],
+    endDate: "",
+    notes: "",
   });
   const [dueReminder, setDueReminder] = useState(null);
-  const [notificationPermission, setNotificationPermission] = useState('default');
+  const [notificationPermission, setNotificationPermission] =
+    useState("default");
   const intervalRef = useRef();
   const audioRef = useRef(null);
-  const lastCheckedTimeRef = useRef('');
+  const lastCheckedTimeRef = useRef("");
   const notificationTimeoutRef = useRef(null);
 
   // Initialize audio and request notification permission
   useEffect(() => {
     // Initialize audio
-    audioRef.current = new Audio('/notification.mp3');
+    audioRef.current = new Audio("/notification.mp3");
     audioRef.current.load();
 
     // Request notification permission
-    if ('Notification' in window) {
-      if (Notification.permission === 'default') {
-        Notification.requestPermission().then(permission => {
+    if ("Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission().then((permission) => {
           setNotificationPermission(permission);
         });
       } else {
@@ -772,57 +972,78 @@ function MedicineRemindersSection() {
   const playNotificationSound = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(error => {
-        console.warn('Could not play notification sound:', error);
+      audioRef.current.play().catch((error) => {
+        console.warn("Could not play notification sound:", error);
       });
     }
   }, []);
 
   // Function to show reminder notification
-  const showReminderNotification = useCallback((reminder) => {
-    if (notificationTimeoutRef.current) {
-      clearTimeout(notificationTimeoutRef.current);
-    }
+  const showReminderNotification = useCallback(
+    (reminder) => {
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
 
-    setDueReminder(reminder);
-    playNotificationSound();
-    
-    if ('Notification' in window && notificationPermission === 'granted') {
-      const notification = new Notification('Time to Take Your Medicine!', {
-        body: `Please take ${reminder.medicine} - ${reminder.dosage}`,
-        icon: '/medicine-icon.png',
-        requireInteraction: true,
-        tag: `reminder-${reminder.id}`
-      });
-
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
-    }
-
-    // Play sound every 5 minutes until taken
-    notificationTimeoutRef.current = setInterval(() => {
+      setDueReminder(reminder);
       playNotificationSound();
-    }, 300000);
-  }, [notificationPermission, playNotificationSound]);
+
+      if ("Notification" in window && notificationPermission === "granted") {
+        const notification = new Notification("Time to Take Your Medicine!", {
+          body: `Please take ${reminder.medicine} - ${reminder.dosage}`,
+          icon: "/medicine-icon.png",
+          requireInteraction: true,
+          tag: `reminder-${reminder.id}`,
+        });
+
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      }
+
+      // Play sound every 5 minutes until taken
+      notificationTimeoutRef.current = setInterval(() => {
+        playNotificationSound();
+      }, 300000);
+    },
+    [notificationPermission, playNotificationSound]
+  );
 
   // Check for due reminders
   useEffect(() => {
     const checkDueReminders = () => {
       const now = new Date();
       const currentTime = now.toTimeString().slice(0, 5);
-      const currentDate = now.toISOString().split('T')[0];
+      const currentDate = now.toISOString().split("T")[0];
 
       if (currentTime !== lastCheckedTimeRef.current) {
         lastCheckedTimeRef.current = currentTime;
 
-        const due = reminders.find(r => 
-          !r.completed && 
-          r.time === currentTime &&
-          (!r.endDate || r.endDate >= currentDate) &&
-          (!r.lastTaken || r.lastTaken.split('T')[0] !== currentDate)
-        );
+        const due = reminders.find((r) => {
+          if (
+            r.completed ||
+            r.time !== currentTime ||
+            (r.endDate && r.endDate < currentDate)
+          ) {
+            return false;
+          }
+          // Cooldown: skip if lastTaken is within the last 2 minutes
+          if (r.lastTaken) {
+            const lastTakenTime = new Date(r.lastTaken);
+            if (!isNaN(lastTakenTime)) {
+              const diffMs = now - lastTakenTime;
+              if (diffMs < 2 * 60 * 1000) {
+                return false;
+              }
+            }
+          }
+          // Also skip if lastTaken is today (existing logic)
+          if (r.lastTaken && r.lastTaken.split("T")[0] === currentDate) {
+            return false;
+          }
+          return true;
+        });
 
         if (due) {
           showReminderNotification(due);
@@ -847,28 +1068,33 @@ function MedicineRemindersSection() {
     try {
       const user = auth.currentUser;
       if (!user) {
-        toast.error('User not authenticated');
+        toast.error("User not authenticated");
         return;
       }
 
       const now = new Date();
-      const currentDate = now.toISOString().split('T')[0];
+      const currentDate = now.toISOString().split("T")[0];
 
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const userData = userDoc.data();
       const currentReminders = userData?.medicineReminders || [];
 
-      const updatedReminders = currentReminders.map(reminder => {
+      const updatedReminders = currentReminders.map((reminder) => {
         if (reminder.id === reminderId) {
-          const lastTakenDate = reminder.lastTaken ? reminder.lastTaken.split('T')[0] : null;
-          const streak = lastTakenDate === currentDate ? reminder.streak : (reminder.streak || 0) + 1;
-          
+          const lastTakenDate = reminder.lastTaken
+            ? reminder.lastTaken.split("T")[0]
+            : null;
+          const streak =
+            lastTakenDate === currentDate
+              ? reminder.streak
+              : (reminder.streak || 0) + 1;
+
           return {
             ...reminder,
             completed: true,
             completedAt: now.toISOString(),
             lastTaken: now.toISOString(),
-            streak
+            streak,
           };
         }
         return reminder;
@@ -876,7 +1102,7 @@ function MedicineRemindersSection() {
 
       // Update Firestore
       await updateDoc(doc(db, "users", user.uid), {
-        medicineReminders: updatedReminders
+        medicineReminders: updatedReminders,
       });
 
       // Update both local states
@@ -884,11 +1110,16 @@ function MedicineRemindersSection() {
       setDueReminder(null);
 
       if (notificationTimeoutRef.current) {
-        clearTimeout(notificationTimeoutRef.current);
+        clearInterval(notificationTimeoutRef.current);
+        notificationTimeoutRef.current = null;
+      }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
       }
 
       // Show success message
-      toast.success('Medication marked as taken!', {
+      toast.success("Medication marked as taken!", {
         position: "top-center",
         autoClose: 3000,
         hideProgressBar: false,
@@ -912,9 +1143,9 @@ function MedicineRemindersSection() {
           if (userDoc.exists()) {
             const userData = userDoc.data();
             const userReminders = userData.medicineReminders || [];
-            const currentDate = new Date().toISOString().split('T')[0];
-            const activeReminders = userReminders.filter(reminder => 
-              !reminder.endDate || reminder.endDate >= currentDate
+            const currentDate = new Date().toISOString().split("T")[0];
+            const activeReminders = userReminders.filter(
+              (reminder) => !reminder.endDate || reminder.endDate >= currentDate
             );
             setReminders(activeReminders);
           }
@@ -928,15 +1159,19 @@ function MedicineRemindersSection() {
   }, []);
 
   const addReminder = async () => {
-    if (!newReminder.medicine || !newReminder.dosage || newReminder.times.some(time => !time)) {
-      toast.error('Please fill in all required fields');
+    if (
+      !newReminder.medicine ||
+      !newReminder.dosage ||
+      newReminder.times.some((time) => !time)
+    ) {
+      toast.error("Please fill in all required fields");
       return;
     }
 
     try {
       const user = auth.currentUser;
       if (!user) {
-        toast.error('User not authenticated');
+        toast.error("User not authenticated");
         return;
       }
 
@@ -948,12 +1183,12 @@ function MedicineRemindersSection() {
         frequency: newReminder.frequency,
         startDate: newReminder.startDate,
         endDate: newReminder.endDate || null,
-        notes: newReminder.notes || '',
+        notes: newReminder.notes || "",
         createdAt: new Date().toISOString(),
         completed: false,
         userId: user.uid,
         lastTaken: null,
-        streak: 0 // Add streak counter
+        streak: 0, // Add streak counter
       }));
 
       // Get current reminders
@@ -966,22 +1201,22 @@ function MedicineRemindersSection() {
 
       // Update Firestore
       await updateDoc(doc(db, "users", user.uid), {
-        medicineReminders: updatedReminders
+        medicineReminders: updatedReminders,
       });
 
       // Update local state
       setReminders(updatedReminders);
       setNewReminder({
-        medicine: '',
-        times: [''],
-        dosage: '',
-        frequency: 'daily',
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: '',
-        notes: ''
+        medicine: "",
+        times: [""],
+        dosage: "",
+        frequency: "daily",
+        startDate: new Date().toISOString().split("T")[0],
+        endDate: "",
+        notes: "",
       });
 
-      toast.success('Reminder(s) added successfully!');
+      toast.success("Reminder(s) added successfully!");
     } catch (error) {
       console.error("Error adding reminder:", error);
       toast.error("Error adding reminder");
@@ -992,7 +1227,7 @@ function MedicineRemindersSection() {
     try {
       const user = auth.currentUser;
       if (!user) {
-        toast.error('User not authenticated');
+        toast.error("User not authenticated");
         return;
       }
 
@@ -1002,16 +1237,18 @@ function MedicineRemindersSection() {
       const currentReminders = userData?.medicineReminders || [];
 
       // Remove the reminder
-      const updatedReminders = currentReminders.filter(reminder => reminder.id !== id);
+      const updatedReminders = currentReminders.filter(
+        (reminder) => reminder.id !== id
+      );
 
       // Update Firestore
       await updateDoc(doc(db, "users", user.uid), {
-        medicineReminders: updatedReminders
+        medicineReminders: updatedReminders,
       });
 
       // Update local state
       setReminders(updatedReminders);
-      toast.success('Reminder deleted successfully!');
+      toast.success("Reminder deleted successfully!");
     } catch (error) {
       console.error("Error deleting reminder:", error);
       toast.error("Error deleting reminder");
@@ -1021,37 +1258,52 @@ function MedicineRemindersSection() {
   return (
     <div className="reminders-section">
       <div className="section-header">
-        <h2><i className="fas fa-pills"></i> Medicine Reminders</h2>
-        <p className="section-description">Set up your medication schedule and never miss a dose</p>
+        <h2>
+          <i className="fas fa-pills"></i> Medicine Reminders
+        </h2>
+        <p className="section-description">
+          Set up your medication schedule and never miss a dose
+        </p>
       </div>
-      
+
       <div className="reminders-container">
         <div className="add-reminder-card">
           <div className="card-header">
-            <h3><i className="fas fa-plus-circle"></i> Add New Reminder</h3>
+            <h3>
+              <i className="fas fa-plus-circle"></i> Add New Reminder
+            </h3>
           </div>
           <div className="reminder-form">
             <div className="form-row">
               <div className="form-group">
-                <label><i className="fas fa-capsules"></i> Medicine Name</label>
+                <label>
+                  <i className="fas fa-capsules"></i> Medicine Name
+                </label>
                 <input
                   type="text"
                   value={newReminder.medicine}
-                  onChange={(e) => setNewReminder({ ...newReminder, medicine: e.target.value })}
+                  onChange={(e) =>
+                    setNewReminder({ ...newReminder, medicine: e.target.value })
+                  }
                   placeholder="Enter medicine name"
                   className="form-control"
                 />
               </div>
 
               <div className="form-group">
-                <label><i className="fas fa-sync"></i> How many times a day?</label>
+                <label>
+                  <i className="fas fa-sync"></i> How many times a day?
+                </label>
                 <select
                   value={newReminder.frequency}
                   onChange={(e) => {
                     const frequency = e.target.value;
-                    const times = frequency === 'daily' ? [''] : 
-                                 frequency === 'twice' ? ['', ''] : 
-                                 ['', '', ''];
+                    const times =
+                      frequency === "daily"
+                        ? [""]
+                        : frequency === "twice"
+                        ? ["", ""]
+                        : ["", "", ""];
                     setNewReminder({ ...newReminder, frequency, times });
                   }}
                   className="form-control"
@@ -1067,7 +1319,7 @@ function MedicineRemindersSection() {
               {newReminder.times.map((time, index) => (
                 <div key={index} className="form-group time-input">
                   <label>
-                    <i className="fas fa-clock"></i> 
+                    <i className="fas fa-clock"></i>
                     Time {index + 1}
                   </label>
                   <input
@@ -1086,22 +1338,33 @@ function MedicineRemindersSection() {
 
             <div className="form-row">
               <div className="form-group">
-                <label><i className="fas fa-calendar"></i> Start Date</label>
+                <label>
+                  <i className="fas fa-calendar"></i> Start Date
+                </label>
                 <input
                   type="date"
                   value={newReminder.startDate}
-                  onChange={(e) => setNewReminder({ ...newReminder, startDate: e.target.value })}
-                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(e) =>
+                    setNewReminder({
+                      ...newReminder,
+                      startDate: e.target.value,
+                    })
+                  }
+                  min={new Date().toISOString().split("T")[0]}
                   className="form-control"
                 />
               </div>
 
               <div className="form-group">
-                <label><i className="fas fa-calendar-times"></i> End Date (Optional)</label>
+                <label>
+                  <i className="fas fa-calendar-times"></i> End Date (Optional)
+                </label>
                 <input
                   type="date"
                   value={newReminder.endDate}
-                  onChange={(e) => setNewReminder({ ...newReminder, endDate: e.target.value })}
+                  onChange={(e) =>
+                    setNewReminder({ ...newReminder, endDate: e.target.value })
+                  }
                   min={newReminder.startDate}
                   className="form-control"
                 />
@@ -1109,28 +1372,37 @@ function MedicineRemindersSection() {
             </div>
 
             <div className="form-group">
-              <label><i className="fas fa-balance-scale"></i> How much to take?</label>
+              <label>
+                <i className="fas fa-balance-scale"></i> How much to take?
+              </label>
               <input
                 type="text"
                 value={newReminder.dosage}
-                onChange={(e) => setNewReminder({ ...newReminder, dosage: e.target.value })}
+                onChange={(e) =>
+                  setNewReminder({ ...newReminder, dosage: e.target.value })
+                }
                 placeholder="Example: 1 tablet, 2 capsules, etc."
                 className="form-control"
               />
             </div>
 
             <div className="form-group">
-              <label><i className="fas fa-sticky-note"></i> Special Instructions (Optional)</label>
+              <label>
+                <i className="fas fa-sticky-note"></i> Special Instructions
+                (Optional)
+              </label>
               <textarea
                 value={newReminder.notes}
-                onChange={(e) => setNewReminder({ ...newReminder, notes: e.target.value })}
+                onChange={(e) =>
+                  setNewReminder({ ...newReminder, notes: e.target.value })
+                }
                 placeholder="Add any special instructions (e.g., take with food, after meals)"
                 className="form-control"
                 rows="3"
               />
             </div>
 
-            <button 
+            <button
               onClick={addReminder}
               className="btn btn-primary add-reminder-btn"
             >
@@ -1170,7 +1442,7 @@ function MedicineRemindersSection() {
                     )}
                   </div>
                   <div className="reminder-actions">
-                    <button 
+                    <button
                       onClick={() => markAsTaken(dueReminder.id)}
                       className="btn btn-success mark-taken-btn"
                     >
@@ -1185,10 +1457,14 @@ function MedicineRemindersSection() {
 
         <div className="reminders-list">
           <div className="list-header">
-            <h3><i className="fas fa-list"></i> Your Reminders</h3>
-            <span className="reminder-count">{reminders.length} active reminders</span>
+            <h3>
+              <i className="fas fa-list"></i> Your Reminders
+            </h3>
+            <span className="reminder-count">
+              {reminders.length} active reminders
+            </span>
           </div>
-          
+
           {reminders.length === 0 ? (
             <div className="no-reminders">
               <i className="fas fa-bell-slash"></i>
@@ -1197,17 +1473,25 @@ function MedicineRemindersSection() {
           ) : (
             <div className="reminders-grid">
               {reminders.map((reminder) => (
-                <div 
-                  key={reminder.id} 
-                  className={`reminder-card ${reminder.completed ? 'completed' : ''}`}
+                <div
+                  key={reminder.id}
+                  className={`reminder-card ${
+                    reminder.completed ? "completed" : ""
+                  }`}
                 >
                   <div className="reminder-header">
-                    <h4><i className="fas fa-pills"></i> {reminder.medicine}</h4>
-                    <span className={`status-badge ${reminder.completed ? 'completed' : 'pending'}`}>
-                      {reminder.completed ? 'Taken' : 'Pending'}
+                    <h4>
+                      <i className="fas fa-pills"></i> {reminder.medicine}
+                    </h4>
+                    <span
+                      className={`status-badge ${
+                        reminder.completed ? "completed" : "pending"
+                      }`}
+                    >
+                      {reminder.completed ? "Taken" : "Pending"}
                     </span>
                   </div>
-                  
+
                   <div className="reminder-details">
                     <div className="detail-item">
                       <i className="fas fa-clock"></i>
@@ -1287,11 +1571,11 @@ function ProfileSection({ userProfile, setUserProfile }) {
     setSuccess(null);
     try {
       const user = auth.currentUser;
-      if (!user) throw new Error('User not authenticated');
+      if (!user) throw new Error("User not authenticated");
 
       // Validate email format if caretaker email is provided
       if (formData.caretakerEmail && !isValidEmail(formData.caretakerEmail)) {
-        throw new Error('Please enter a valid caretaker email address');
+        throw new Error("Please enter a valid caretaker email address");
       }
 
       // Create the update object with only the fields that can be edited
@@ -1306,19 +1590,19 @@ function ProfileSection({ userProfile, setUserProfile }) {
       };
 
       // Update Firestore
-      await updateDoc(doc(db, 'users', user.uid), updateData);
-      
+      await updateDoc(doc(db, "users", user.uid), updateData);
+
       // Update local state
       setUserProfile(updateData);
-      setSuccess('Profile updated successfully!');
+      setSuccess("Profile updated successfully!");
       setEditMode(false);
-      
+
       // Show success toast
-      toast.success('Profile updated successfully!');
+      toast.success("Profile updated successfully!");
     } catch (err) {
-      console.error('Error updating profile:', err);
-      setError('Failed to update profile: ' + err.message);
-      toast.error('Failed to update profile');
+      console.error("Error updating profile:", err);
+      setError("Failed to update profile: " + err.message);
+      toast.error("Failed to update profile");
     } finally {
       setIsSaving(false);
     }
@@ -1332,7 +1616,7 @@ function ProfileSection({ userProfile, setUserProfile }) {
 
   return (
     <div className="section profile-section">
-      <div className="profile-header-banner" style={{position: 'relative'}}>
+      <div className="profile-header-banner" style={{ position: "relative" }}>
         <div className="profile-avatar">
           <i className="fas fa-user-circle"></i>
         </div>
@@ -1341,23 +1625,23 @@ function ProfileSection({ userProfile, setUserProfile }) {
           <button
             className="edit-profile-btn"
             style={{
-              position: 'absolute',
+              position: "absolute",
               top: 24,
               right: 24,
-              background: '#3498db',
-              color: 'white',
-              border: 'none',
-              borderRadius: '50%',
+              background: "#3498db",
+              color: "white",
+              border: "none",
+              borderRadius: "50%",
               width: 48,
               height: 48,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(52,152,219,0.15)',
-              cursor: 'pointer',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 2px 8px rgba(52,152,219,0.15)",
+              cursor: "pointer",
               fontSize: 22,
               zIndex: 2,
-              transition: 'background 0.2s',
+              transition: "background 0.2s",
             }}
             title="Edit Profile"
             onClick={() => setEditMode(true)}
@@ -1378,27 +1662,29 @@ function ProfileSection({ userProfile, setUserProfile }) {
               </div>
               <div className="profile-details">
                 <div className="detail-item">
-                  <label><i className="fas fa-user-tag"></i> Full Name</label>
+                  <label>
+                    <i className="fas fa-user-tag"></i> Full Name
+                  </label>
                   {editMode ? (
-                    <div style={{display: 'flex', gap: '1rem'}}>
+                    <div style={{ display: "flex", gap: "1rem" }}>
                       <input
                         type="text"
                         name="firstName"
-                        value={formData.firstName || ''}
+                        value={formData.firstName || ""}
                         onChange={handleChange}
                         placeholder="First Name"
                         className="form-control"
-                        style={{maxWidth: '150px'}}
+                        style={{ maxWidth: "150px" }}
                         required
                       />
                       <input
                         type="text"
                         name="lastName"
-                        value={formData.lastName || ''}
+                        value={formData.lastName || ""}
                         onChange={handleChange}
                         placeholder="Last Name"
                         className="form-control"
-                        style={{maxWidth: '150px'}}
+                        style={{ maxWidth: "150px" }}
                         required
                       />
                     </div>
@@ -1407,22 +1693,28 @@ function ProfileSection({ userProfile, setUserProfile }) {
                   )}
                 </div>
                 <div className="detail-item">
-                  <label><i className="fas fa-envelope"></i> Email</label>
+                  <label>
+                    <i className="fas fa-envelope"></i> Email
+                  </label>
                   <p>{userProfile.email}</p>
                 </div>
                 <div className="detail-item">
-                  <label><i className="fas fa-calendar-alt"></i> Date of Birth</label>
+                  <label>
+                    <i className="fas fa-calendar-alt"></i> Date of Birth
+                  </label>
                   {editMode ? (
                     <input
                       type="date"
                       name="dateOfBirth"
-                      value={formData.dateOfBirth || ''}
+                      value={formData.dateOfBirth || ""}
                       onChange={handleChange}
                       className="form-control"
                       required
                     />
                   ) : (
-                    <p>{new Date(userProfile.dateOfBirth).toLocaleDateString()}</p>
+                    <p>
+                      {new Date(userProfile.dateOfBirth).toLocaleDateString()}
+                    </p>
                   )}
                 </div>
               </div>
@@ -1434,12 +1726,14 @@ function ProfileSection({ userProfile, setUserProfile }) {
               </div>
               <div className="profile-details">
                 <div className="detail-item">
-                  <label><i className="fas fa-phone"></i> Phone Number</label>
+                  <label>
+                    <i className="fas fa-phone"></i> Phone Number
+                  </label>
                   {editMode ? (
                     <input
                       type="tel"
                       name="phoneNumber"
-                      value={formData.phoneNumber || ''}
+                      value={formData.phoneNumber || ""}
                       onChange={handleChange}
                       className="form-control"
                       required
@@ -1449,12 +1743,14 @@ function ProfileSection({ userProfile, setUserProfile }) {
                   )}
                 </div>
                 <div className="detail-item">
-                  <label><i className="fas fa-user-shield"></i> Caretaker's Phone</label>
+                  <label>
+                    <i className="fas fa-user-shield"></i> Caretaker's Phone
+                  </label>
                   {editMode ? (
                     <input
                       type="tel"
                       name="caretakerPhone"
-                      value={formData.caretakerPhone || ''}
+                      value={formData.caretakerPhone || ""}
                       onChange={handleChange}
                       className="form-control"
                       required
@@ -1464,29 +1760,47 @@ function ProfileSection({ userProfile, setUserProfile }) {
                   )}
                 </div>
                 <div className="detail-item">
-                  <label><i className="fas fa-envelope"></i> Caretaker's Email</label>
+                  <label>
+                    <i className="fas fa-envelope"></i> Caretaker's Email
+                  </label>
                   {editMode ? (
                     <input
                       type="email"
                       name="caretakerEmail"
-                      value={formData.caretakerEmail || ''}
+                      value={formData.caretakerEmail || ""}
                       onChange={handleChange}
                       className="form-control"
                       placeholder="Enter caretaker's email"
                     />
                   ) : (
-                    <p>{userProfile.caretakerEmail || 'Not provided'}</p>
+                    <p>{userProfile.caretakerEmail || "Not provided"}</p>
                   )}
                 </div>
               </div>
             </div>
           </div>
           {editMode && (
-            <div style={{marginTop: 30, textAlign: 'center'}}>
-              <button className="btn btn-success" onClick={handleSave} disabled={isSaving}>
-                {isSaving ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-save"></i>} Save
+            <div style={{ marginTop: 30, textAlign: "center" }}>
+              <button
+                className="btn btn-success"
+                onClick={handleSave}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <i className="fas fa-spinner fa-spin"></i>
+                ) : (
+                  <i className="fas fa-save"></i>
+                )}{" "}
+                Save
               </button>
-              <button className="btn btn-secondary" style={{marginLeft: 15}} onClick={() => { setEditMode(false); setFormData(userProfile); }}>
+              <button
+                className="btn btn-secondary"
+                style={{ marginLeft: 15 }}
+                onClick={() => {
+                  setEditMode(false);
+                  setFormData(userProfile);
+                }}
+              >
                 Cancel
               </button>
             </div>
@@ -1507,24 +1821,26 @@ function ProfileSection({ userProfile, setUserProfile }) {
 // Therapy Section Component
 function TherapySection() {
   const [selectedVideo, setSelectedVideo] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState("All");
 
   const healthVideos = [
     {
       id: 1,
       title: "Understanding Mental Health",
-      description: "A comprehensive guide to understanding mental health and well-being.",
+      description:
+        "A comprehensive guide to understanding mental health and well-being.",
       thumbnail: "https://img.youtube.com/vi/wOGqlVqyvCM/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/wOGqlVqyvCM",
-      category: "Mental Health"
+      category: "Mental Health",
     },
     {
       id: 2,
       title: "Mental Health Awareness",
-      description: "Important information about mental health awareness and support.",
+      description:
+        "Important information about mental health awareness and support.",
       thumbnail: "https://img.youtube.com/vi/C2dum954yIg/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/C2dum954yIg",
-      category: "Mental Health"
+      category: "Mental Health",
     },
     {
       id: 3,
@@ -1532,32 +1848,35 @@ function TherapySection() {
       description: "Essential guide to understanding nutrition fundamentals.",
       thumbnail: "https://img.youtube.com/vi/-e-4Kx5px_I/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/-e-4Kx5px_I",
-      category: "Nutrition"
+      category: "Nutrition",
     },
     {
       id: 4,
       title: "Healthy Eating Habits",
-      description: "Learn about maintaining healthy eating habits for better nutrition.",
+      description:
+        "Learn about maintaining healthy eating habits for better nutrition.",
       thumbnail: "https://img.youtube.com/vi/c06dTj0v0sM/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/c06dTj0v0sM",
-      category: "Nutrition"
+      category: "Nutrition",
     },
     {
       id: 5,
       title: "Balanced Diet Guide",
-      description: "Comprehensive guide to creating and maintaining a balanced diet.",
+      description:
+        "Comprehensive guide to creating and maintaining a balanced diet.",
       thumbnail: "https://img.youtube.com/vi/YAmzlo5pbN8/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/YAmzlo5pbN8",
-      category: "Nutrition"
+      category: "Nutrition",
     },
-    
-     {
+
+    {
       id: 12,
       title: "Proper Handwashing",
-      description: "Learn the correct way to wash your hands to prevent the spread of germs.",
+      description:
+        "Learn the correct way to wash your hands to prevent the spread of germs.",
       thumbnail: "https://img.youtube.com/vi/UxskKQ9WOTE/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/UxskKQ9WOTE",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 13,
@@ -1565,31 +1884,34 @@ function TherapySection() {
       description: "Essential tips for maintaining good oral health.",
       thumbnail: "https://img.youtube.com/vi/zh7CACofsio/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/zh7CACofsio",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 14,
       title: "Importance of Sleep",
-      description: "Understanding why sleep is crucial for your health and well-being.",
+      description:
+        "Understanding why sleep is crucial for your health and well-being.",
       thumbnail: "https://img.youtube.com/vi/In_sGALiccs/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/In_sGALiccs",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 15,
       title: "Importance of Physical Activity",
-      description: "Understand the importance of physical activity for overall health.",
+      description:
+        "Understand the importance of physical activity for overall health.",
       thumbnail: "https://img.youtube.com/vi/D411IY14pCI/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/D411IY14pCI",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 16,
       title: "Understanding Vaccinations",
-      description: "Learn about the importance of vaccinations for preventing diseases.",
+      description:
+        "Learn about the importance of vaccinations for preventing diseases.",
       thumbnail: "https://img.youtube.com/vi/12Lwmd_Dq4c/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/12Lwmd_Dq4c",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 17,
@@ -1597,15 +1919,16 @@ function TherapySection() {
       description: "Tips for protecting your skin from the sun's harmful rays.",
       thumbnail: "https://img.youtube.com/vi/3PmVJQUCm4E/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/3PmVJQUCm4E",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 18,
       title: "Managing Stress",
-      description: "Effective techniques for managing stress in your daily life.",
+      description:
+        "Effective techniques for managing stress in your daily life.",
       thumbnail: "https://img.youtube.com/vi/01COSszay_g/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/01COSszay_g",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 19,
@@ -1613,7 +1936,7 @@ function TherapySection() {
       description: "Learn essential first aid skills for common injuries.",
       thumbnail: "https://img.youtube.com/vi/OdRM9chZHaY/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/OdRM9chZHaY",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 20,
@@ -1621,7 +1944,7 @@ function TherapySection() {
       description: "Simple habits for a healthier lifestyle.",
       thumbnail: "https://img.youtube.com/vi/jLmN0ts0k4o/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/jLmN0ts0k4o",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 21,
@@ -1629,7 +1952,7 @@ function TherapySection() {
       description: "Tips and strategies for strengthening your immune system.",
       thumbnail: "https://img.youtube.com/vi/XVYn2AoSneA/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/XVYn2AoSneA",
-      category: "Health and Hygiene"
+      category: "Health and Hygiene",
     },
     {
       id: 22,
@@ -1637,7 +1960,7 @@ function TherapySection() {
       description: "A simple full body workout routine for beginners.",
       thumbnail: "https://img.youtube.com/vi/-_VhU5rqyko/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/-_VhU5rqyko",
-      category: "Fitness"
+      category: "Fitness",
     },
     {
       id: 23,
@@ -1645,7 +1968,7 @@ function TherapySection() {
       description: "A gentle yoga routine to start your day.",
       thumbnail: "https://img.youtube.com/vi/h2KGe11oyEI/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/h2KGe11oyEI",
-      category: "Fitness"
+      category: "Fitness",
     },
     {
       id: 25,
@@ -1653,7 +1976,7 @@ function TherapySection() {
       description: "Fundamental strength training exercises.",
       thumbnail: "https://img.youtube.com/vi/d737O-vv5TY/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/d737O-vv5TY",
-      category: "Fitness"
+      category: "Fitness",
     },
     {
       id: 26,
@@ -1661,58 +1984,71 @@ function TherapySection() {
       description: "Exercises to improve your flexibility.",
       thumbnail: "https://img.youtube.com/vi/x6wiDew4sYU/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/x6wiDew4sYU",
-      category: "Fitness"
-    },    {
+      category: "Fitness",
+    },
+    {
       id: 27,
       title: "High-Intensity Interval Training (HIIT)",
       description: "An intense HIIT workout routine.",
       thumbnail: "https://img.youtube.com/vi/Wa8Fk8TaXPk/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/Wa8Fk8TaXPk",
-      category: "Fitness"
-    },    {
+      category: "Fitness",
+    },
+    {
       id: 28,
       title: "Workout Motivation",
       description: "Tips and inspiration to stay motivated with your workouts.",
       thumbnail: "https://img.youtube.com/vi/IL3E0SGEWl0/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/IL3E0SGEWl0",
-      category: "Fitness"
-    },    {
+      category: "Fitness",
+    },
+    {
       id: 29,
       title: "Post-Workout Stretching",
       description: "Stretches to do after your workout.",
       thumbnail: "https://img.youtube.com/vi/aX5FP3odWL4/maxresdefault.jpg",
       url: "https://www.youtube.com/embed/aX5FP3odWL4",
-      category: "Fitness"
-    }
+      category: "Fitness",
+    },
   ];
 
-  const categories = ['All', ...new Set(healthVideos.map(video => video.category))];
+  const categories = [
+    "All",
+    ...new Set(healthVideos.map((video) => video.category)),
+  ];
 
-  const filteredVideos = selectedCategory === 'All' 
-    ? healthVideos 
-    : healthVideos.filter(video => video.category === selectedCategory);
+  const filteredVideos =
+    selectedCategory === "All"
+      ? healthVideos
+      : healthVideos.filter((video) => video.category === selectedCategory);
 
   return (
-    <div className="section therapy-section" style={{ padding: '20px' }}>
-      <div className="section-header" style={{ marginBottom: '30px' }}>
-        <h2><i className="fas fa-brain"></i> Health & Wellness Resources</h2>
-        <p className="section-description">Access helpful videos and resources to support your health and well-being</p>
+    <div className="section therapy-section" style={{ padding: "20px" }}>
+      <div className="section-header" style={{ marginBottom: "30px" }}>
+        <h2>
+          <i className="fas fa-brain"></i> Health & Wellness Resources
+        </h2>
+        <p className="section-description">
+          Access helpful videos and resources to support your health and
+          well-being
+        </p>
       </div>
 
-      <div className="category-filter" style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {categories.map(category => (
+      <div className="category-filter" style={{ marginBottom: "20px" }}>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          {categories.map((category) => (
             <button
               key={category}
               onClick={() => setSelectedCategory(category)}
               style={{
-                padding: '8px 16px',
-                borderRadius: '20px',
-                border: 'none',
-                background: selectedCategory === category ? '#2563eb' : '#f3f4f6',
-                color: selectedCategory === category ? 'white' : '#374151',
-                cursor: 'pointer',
-                transition: 'all 0.3s ease'
+                padding: "8px 16px",
+                borderRadius: "20px",
+                border: "none",
+                background:
+                  selectedCategory === category ? "#2563eb" : "#f3f4f6",
+                color: selectedCategory === category ? "white" : "#374151",
+                cursor: "pointer",
+                transition: "all 0.3s ease",
               }}
             >
               {category}
@@ -1721,121 +2057,161 @@ function TherapySection() {
         </div>
       </div>
 
-      <div className="videos-grid" style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-        gap: '20px',
-        marginBottom: '30px'
-      }}>
+      <div
+        className="videos-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+          gap: "20px",
+          marginBottom: "30px",
+        }}
+      >
         {filteredVideos.map((video) => (
-          <div key={video.id} className="video-card" style={{
-            background: 'white',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-            transition: 'transform 0.3s ease',
-            cursor: 'pointer'
-          }}
-          onClick={() => setSelectedVideo(video)}>
-            <div className="video-thumbnail" style={{ position: 'relative', paddingTop: '56.25%' }}>
+          <div
+            key={video.id}
+            className="video-card"
+            style={{
+              background: "white",
+              borderRadius: "12px",
+              overflow: "hidden",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+              transition: "transform 0.3s ease",
+              cursor: "pointer",
+            }}
+            onClick={() => setSelectedVideo(video)}
+          >
+            <div
+              className="video-thumbnail"
+              style={{ position: "relative", paddingTop: "56.25%" }}
+            >
               <img
                 src={video.thumbnail}
                 alt={video.title}
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   top: 0,
                   left: 0,
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover'
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
                 }}
               />
-              <div className="play-button" style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                background: 'rgba(0,0,0,0.7)',
-                width: '60px',
-                height: '60px',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <i className="fas fa-play" style={{ color: 'white', fontSize: '24px' }}></i>
+              <div
+                className="play-button"
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  background: "rgba(0,0,0,0.7)",
+                  width: "60px",
+                  height: "60px",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <i
+                  className="fas fa-play"
+                  style={{ color: "white", fontSize: "24px" }}
+                ></i>
               </div>
             </div>
-            <div className="video-info" style={{ padding: '15px' }}>
-              <div style={{ 
-                display: 'inline-block',
-                padding: '4px 8px',
-                borderRadius: '4px',
-                background: '#e5e7eb',
-                fontSize: '12px',
-                marginBottom: '8px'
-              }}>
+            <div className="video-info" style={{ padding: "15px" }}>
+              <div
+                style={{
+                  display: "inline-block",
+                  padding: "4px 8px",
+                  borderRadius: "4px",
+                  background: "#e5e7eb",
+                  fontSize: "12px",
+                  marginBottom: "8px",
+                }}
+              >
                 {video.category}
               </div>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', color: '#333' }}>{video.title}</h3>
-              <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>{video.description}</p>
+              <h3
+                style={{
+                  margin: "0 0 10px 0",
+                  fontSize: "18px",
+                  color: "#333",
+                }}
+              >
+                {video.title}
+              </h3>
+              <p style={{ margin: 0, color: "#666", fontSize: "14px" }}>
+                {video.description}
+              </p>
             </div>
           </div>
         ))}
       </div>
 
       {selectedVideo && (
-        <div className="video-modal" style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div className="video-container" style={{
-            width: '90%',
-            maxWidth: '800px',
-            background: 'white',
-            borderRadius: '12px',
-            overflow: 'hidden'
-          }}>
-            <div className="video-header" style={{
-              padding: '15px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              borderBottom: '1px solid #eee'
-            }}>
+        <div
+          className="video-modal"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.8)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            className="video-container"
+            style={{
+              width: "90%",
+              maxWidth: "800px",
+              background: "white",
+              borderRadius: "12px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              className="video-header"
+              style={{
+                padding: "15px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                borderBottom: "1px solid #eee",
+              }}
+            >
               <h3 style={{ margin: 0 }}>{selectedVideo.title}</h3>
               <button
                 onClick={() => setSelectedVideo(null)}
                 style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: '#666'
+                  background: "none",
+                  border: "none",
+                  fontSize: "24px",
+                  cursor: "pointer",
+                  color: "#666",
                 }}
               >
                 <i className="fas fa-times"></i>
               </button>
             </div>
-            <div className="video-frame" style={{ position: 'relative', paddingTop: '56.25%' }}>
+            <div
+              className="video-frame"
+              style={{ position: "relative", paddingTop: "56.25%" }}
+            >
               <iframe
                 src={selectedVideo.url}
                 title={selectedVideo.title}
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   top: 0,
                   left: 0,
-                  width: '100%',
-                  height: '100%',
-                  border: 'none'
+                  width: "100%",
+                  height: "100%",
+                  border: "none",
                 }}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
@@ -1854,7 +2230,7 @@ function MedicalRecordsSection() {
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [records, setRecords] = useState([]);
-  const [recordType, setRecordType] = useState('prescription');
+  const [recordType, setRecordType] = useState("prescription");
   const [uploadStatus, setUploadStatus] = useState(null);
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -1882,15 +2258,15 @@ function MedicalRecordsSection() {
         const userData = userDoc.data();
         if (userData?.medicalRecords) {
           // Sort records by upload date, newest first
-          const sortedRecords = [...userData.medicalRecords].sort((a, b) => 
-            new Date(b.uploadDate) - new Date(a.uploadDate)
+          const sortedRecords = [...userData.medicalRecords].sort(
+            (a, b) => new Date(b.uploadDate) - new Date(a.uploadDate)
           );
           setRecords(sortedRecords);
         }
       }
     } catch (error) {
-      console.error('Error fetching records:', error);
-      toast.error('Error loading medical records');
+      console.error("Error fetching records:", error);
+      toast.error("Error loading medical records");
     } finally {
       setIsLoadingRecords(false);
     }
@@ -1900,14 +2276,14 @@ function MedicalRecordsSection() {
     const file = event.target.files[0];
     if (file) {
       // Check file type
-      const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+      const allowedTypes = ["image/jpeg", "image/png", "application/pdf"];
       if (!allowedTypes.includes(file.type)) {
-        toast.error('Please upload only JPG, PNG, or PDF files');
+        toast.error("Please upload only JPG, PNG, or PDF files");
         return;
       }
       // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        toast.error('File size should be less than 5MB');
+        toast.error("File size should be less than 5MB");
         return;
       }
       setSelectedFile(file);
@@ -1918,30 +2294,30 @@ function MedicalRecordsSection() {
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      toast.error('Please select a file first');
+      toast.error("Please select a file first");
       return;
     }
 
     setLoading(true);
-    setUploadStatus('uploading');
+    setUploadStatus("uploading");
     setUploadProgress(0);
 
     try {
       const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('upload_preset', 'ml_default');
-      
+      formData.append("file", selectedFile);
+      formData.append("upload_preset", "ml_default");
+
       // Add user-specific folder
       const user = auth.currentUser;
       if (user) {
-        formData.append('folder', `users/${user.uid}/medical-records`);
+        formData.append("folder", `users/${user.uid}/medical-records`);
       }
 
       // Upload to Cloudinary
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/${process.env.REACT_APP_CLOUDINARY_CLOUD_NAME}/image/upload`,
         {
-          method: 'POST',
+          method: "POST",
           body: formData,
         }
       );
@@ -1954,24 +2330,24 @@ function MedicalRecordsSection() {
           url: data.secure_url,
           uploadDate: new Date().toISOString(),
           type: recordType,
-          userId: user.uid
+          userId: user.uid,
         };
 
         // Update user's medical records array
         await updateDoc(doc(db, "users", user.uid), {
-          medicalRecords: arrayUnion(record)
+          medicalRecords: arrayUnion(record),
         });
 
         setRecords([...records, record]);
-        setUploadStatus('uploaded');
+        setUploadStatus("uploaded");
         setSelectedFile(null);
         setPreviewUrl(null);
-        toast.success('Medical record uploaded successfully!');
+        toast.success("Medical record uploaded successfully!");
       }
     } catch (error) {
-      console.error('Error uploading record:', error);
-      toast.error('Error uploading medical record');
-      setUploadStatus('error');
+      console.error("Error uploading record:", error);
+      toast.error("Error uploading medical record");
+      setUploadStatus("error");
     } finally {
       setLoading(false);
     }
@@ -1981,7 +2357,7 @@ function MedicalRecordsSection() {
     try {
       const user = auth.currentUser;
       if (!user) {
-        toast.error('User not authenticated');
+        toast.error("User not authenticated");
         return;
       }
 
@@ -1991,59 +2367,102 @@ function MedicalRecordsSection() {
       const currentRecords = userData?.medicalRecords || [];
 
       // Remove the record from the array
-      const updatedRecords = currentRecords.filter(record => record.url !== recordUrl);
+      const updatedRecords = currentRecords.filter(
+        (record) => record.url !== recordUrl
+      );
 
       // Update Firestore
       await updateDoc(doc(db, "users", user.uid), {
-        medicalRecords: updatedRecords
+        medicalRecords: updatedRecords,
       });
 
       // Update local state
       setRecords(updatedRecords);
-      toast.success('Medical record deleted successfully!');
+      toast.success("Medical record deleted successfully!");
     } catch (error) {
-      console.error('Error deleting record:', error);
-      toast.error('Error deleting medical record');
+      console.error("Error deleting record:", error);
+      toast.error("Error deleting medical record");
     }
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', minHeight: '70vh', background: '#f4f7fb', padding: '40px 0' }}>
-      <div style={{
-        background: '#fff',
-        borderRadius: '18px',
-        boxShadow: '0 8px 32px rgba(60,60,120,0.10)',
-        padding: '36px 32px',
-        maxWidth: '700px',
-        width: '100%',
-        margin: '0 16px',
-        transition: 'box-shadow 0.2s',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 28 }}>
-          <i className="fas fa-file-medical" style={{ fontSize: 28, color: '#2563eb', marginRight: 14 }}></i>
-          <h2 style={{ fontWeight: 700, fontSize: 26, margin: 0, color: '#222' }}>Medical Records</h2>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-start",
+        minHeight: "70vh",
+        background: "#f4f7fb",
+        padding: "40px 0",
+      }}
+    >
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "18px",
+          boxShadow: "0 8px 32px rgba(60,60,120,0.10)",
+          padding: "36px 32px",
+          maxWidth: "700px",
+          width: "100%",
+          margin: "0 16px",
+          transition: "box-shadow 0.2s",
+        }}
+      >
+        <div
+          style={{ display: "flex", alignItems: "center", marginBottom: 28 }}
+        >
+          <i
+            className="fas fa-file-medical"
+            style={{ fontSize: 28, color: "#2563eb", marginRight: 14 }}
+          ></i>
+          <h2
+            style={{ fontWeight: 700, fontSize: 26, margin: 0, color: "#222" }}
+          >
+            Medical Records
+          </h2>
         </div>
-        <p style={{ color: '#6b7280', marginBottom: 32, fontSize: 16 }}>Upload and manage your medical documents</p>
+        <p style={{ color: "#6b7280", marginBottom: 32, fontSize: 16 }}>
+          Upload and manage your medical documents
+        </p>
 
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 32 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 24,
+            flexWrap: "wrap",
+            marginBottom: 32,
+          }}
+        >
           {/* Record Type */}
           <div style={{ flex: 1, minWidth: 180 }}>
-            <label style={{ fontWeight: 600, color: '#374151', marginBottom: 8, display: 'block', fontSize: 15 }}>
-              <i className="fas fa-notes-medical" style={{ color: '#2563eb', marginRight: 7 }}></i>Type
+            <label
+              style={{
+                fontWeight: 600,
+                color: "#374151",
+                marginBottom: 8,
+                display: "block",
+                fontSize: 15,
+              }}
+            >
+              <i
+                className="fas fa-notes-medical"
+                style={{ color: "#2563eb", marginRight: 7 }}
+              ></i>
+              Type
             </label>
             <select
               value={recordType}
               onChange={(e) => setRecordType(e.target.value)}
               style={{
-                width: '100%',
-                padding: '10px 12px',
+                width: "100%",
+                padding: "10px 12px",
                 borderRadius: 8,
-                border: '1.5px solid #e5e7eb',
+                border: "1.5px solid #e5e7eb",
                 fontSize: 15,
-                background: '#f9fafb',
+                background: "#f9fafb",
                 fontWeight: 500,
-                outline: 'none',
-                transition: 'border 0.2s',
+                outline: "none",
+                transition: "border 0.2s",
               }}
             >
               <option value="prescription">Prescription</option>
@@ -2056,28 +2475,48 @@ function MedicalRecordsSection() {
 
           {/* File Input */}
           <div style={{ flex: 2, minWidth: 220 }}>
-            <label style={{ fontWeight: 600, color: '#374151', marginBottom: 8, display: 'block', fontSize: 15 }}>
-              <i className="fas fa-file-upload" style={{ color: '#2563eb', marginRight: 7 }}></i>File
+            <label
+              style={{
+                fontWeight: 600,
+                color: "#374151",
+                marginBottom: 8,
+                display: "block",
+                fontSize: 15,
+              }}
+            >
+              <i
+                className="fas fa-file-upload"
+                style={{ color: "#2563eb", marginRight: 7 }}
+              ></i>
+              File
             </label>
             <div
               style={{
-                border: '2px dashed #c7d2fe',
+                border: "2px dashed #c7d2fe",
                 borderRadius: 10,
-                background: '#f1f5f9',
-                padding: '18px 12px',
-                textAlign: 'center',
-                cursor: 'pointer',
-                transition: 'border 0.2s',
+                background: "#f1f5f9",
+                padding: "18px 12px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "border 0.2s",
                 minHeight: 70,
-                position: 'relative',
+                position: "relative",
               }}
-              onClick={() => document.getElementById('file-upload-input').click()}
-              onDragOver={e => { e.preventDefault(); e.currentTarget.style.border = '2px solid #2563eb'; }}
-              onDragLeave={e => { e.preventDefault(); e.currentTarget.style.border = '2px dashed #c7d2fe'; }}
-              onDrop={e => {
+              onClick={() =>
+                document.getElementById("file-upload-input").click()
+              }
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.currentTarget.style.border = "2px solid #2563eb";
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.currentTarget.style.border = "2px dashed #c7d2fe";
+              }}
+              onDrop={(e) => {
                 e.preventDefault();
                 setSelectedFile(e.dataTransfer.files[0]);
-                e.currentTarget.style.border = '2px dashed #c7d2fe';
+                e.currentTarget.style.border = "2px dashed #c7d2fe";
               }}
             >
               <input
@@ -2085,12 +2524,21 @@ function MedicalRecordsSection() {
                 type="file"
                 onChange={handleFileChange}
                 accept=".jpg,.jpeg,.png,.pdf"
-                style={{ display: 'none' }}
+                style={{ display: "none" }}
               />
-              <span style={{ fontSize: 15, color: '#374151', fontWeight: 500 }}>
-                {selectedFile ? selectedFile.name : 'Drag & drop or click to select file'}
+              <span style={{ fontSize: 15, color: "#374151", fontWeight: 500 }}>
+                {selectedFile
+                  ? selectedFile.name
+                  : "Drag & drop or click to select file"}
               </span>
-              <small style={{ display: 'block', color: '#6b7280', marginTop: 6, fontSize: 13 }}>
+              <small
+                style={{
+                  display: "block",
+                  color: "#6b7280",
+                  marginTop: 6,
+                  fontSize: 13,
+                }}
+              >
                 Max 5MB. JPG, PNG, PDF only.
               </small>
             </div>
@@ -2098,49 +2546,79 @@ function MedicalRecordsSection() {
 
           {/* Preview */}
           <div style={{ flex: 1.2, minWidth: 180 }}>
-            <label style={{ fontWeight: 600, color: '#374151', marginBottom: 8, display: 'block', fontSize: 15 }}>
-              <i className="fas fa-eye" style={{ color: '#2563eb', marginRight: 7 }}></i>Preview
+            <label
+              style={{
+                fontWeight: 600,
+                color: "#374151",
+                marginBottom: 8,
+                display: "block",
+                fontSize: 15,
+              }}
+            >
+              <i
+                className="fas fa-eye"
+                style={{ color: "#2563eb", marginRight: 7 }}
+              ></i>
+              Preview
             </label>
-            <div style={{
-              background: '#f9fafb',
-              border: '1.5px solid #e5e7eb',
-              borderRadius: 10,
-              minHeight: 70,
-              height: 110,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              overflow: 'hidden',
-              boxShadow: '0 2px 8px rgba(60,60,120,0.04)'
-            }}>
+            <div
+              style={{
+                background: "#f9fafb",
+                border: "1.5px solid #e5e7eb",
+                borderRadius: 10,
+                minHeight: 70,
+                height: 110,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+                boxShadow: "0 2px 8px rgba(60,60,120,0.04)",
+              }}
+            >
               {previewUrl ? (
-                selectedFile?.type === 'application/pdf' ? (
+                selectedFile?.type === "application/pdf" ? (
                   <iframe
                     src={previewUrl}
                     title="PDF Preview"
-                    style={{ width: '100%', height: '100%', border: 'none', borderRadius: 8 }}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      border: "none",
+                      borderRadius: 8,
+                    }}
                   />
                 ) : (
                   <img
                     src={previewUrl}
                     alt="Preview"
-                    style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8, objectFit: 'contain' }}
+                    style={{
+                      maxWidth: "100%",
+                      maxHeight: "100%",
+                      borderRadius: 8,
+                      objectFit: "contain",
+                    }}
                   />
                 )
               ) : (
-                <span style={{ color: '#9ca3af', fontSize: 14 }}>No file selected</span>
+                <span style={{ color: "#9ca3af", fontSize: 14 }}>
+                  No file selected
+                </span>
               )}
             </div>
           </div>
         </div>
 
-        {uploadStatus === 'uploading' && (
+        {uploadStatus === "uploading" && (
           <div style={{ marginBottom: 18 }}>
             <div className="progress" style={{ height: 8, borderRadius: 5 }}>
               <div
                 className="progress-bar"
                 role="progressbar"
-                style={{ width: `${uploadProgress}%`, transition: 'width 0.3s', background: '#2563eb' }}
+                style={{
+                  width: `${uploadProgress}%`,
+                  transition: "width 0.3s",
+                  background: "#2563eb",
+                }}
                 aria-valuenow={uploadProgress}
                 aria-valuemin="0"
                 aria-valuemax="100"
@@ -2151,22 +2629,22 @@ function MedicalRecordsSection() {
           </div>
         )}
 
-        <div style={{ textAlign: 'center', marginTop: 10 }}>
+        <div style={{ textAlign: "center", marginTop: 10 }}>
           <button
             onClick={handleUpload}
             disabled={!selectedFile || loading}
             className="btn btn-primary"
             style={{
-              padding: '13px 38px',
-              fontSize: '1.1rem',
-              borderRadius: '8px',
+              padding: "13px 38px",
+              fontSize: "1.1rem",
+              borderRadius: "8px",
               fontWeight: 600,
-              background: '#2563eb',
-              border: 'none',
-              boxShadow: '0 2px 8px rgba(37,99,235,0.08)',
-              transition: 'background 0.2s',
-              minWidth: '200px',
-              letterSpacing: '0.5px',
+              background: "#2563eb",
+              border: "none",
+              boxShadow: "0 2px 8px rgba(37,99,235,0.08)",
+              transition: "background 0.2s",
+              minWidth: "200px",
+              letterSpacing: "0.5px",
             }}
           >
             {loading ? (
@@ -2182,121 +2660,180 @@ function MedicalRecordsSection() {
         </div>
 
         {/* Records List - keep previous design for now */}
-        <div className="records-list" style={{ marginTop: '40px' }}>
-          <div className="list-header" style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '20px',
-            padding: '15px',
-            backgroundColor: '#f8f9fa',
-            borderRadius: '8px'
-          }}>
-            <h3><i className="fas fa-list"></i> Your Records</h3>
-            <span className="record-count" style={{
-              backgroundColor: '#e9ecef',
-              padding: '5px 15px',
-              borderRadius: '20px',
-              fontSize: '0.9rem',
-              color: '#495057'
-            }}>
+        <div className="records-list" style={{ marginTop: "40px" }}>
+          <div
+            className="list-header"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "20px",
+              padding: "15px",
+              backgroundColor: "#f8f9fa",
+              borderRadius: "8px",
+            }}
+          >
+            <h3>
+              <i className="fas fa-list"></i> Your Records
+            </h3>
+            <span
+              className="record-count"
+              style={{
+                backgroundColor: "#e9ecef",
+                padding: "5px 15px",
+                borderRadius: "20px",
+                fontSize: "0.9rem",
+                color: "#495057",
+              }}
+            >
               {records.length} records
             </span>
           </div>
 
           {isLoadingRecords ? (
-            <div className="loading-records" style={{
-              textAlign: 'center',
-              padding: '40px',
-              backgroundColor: '#f8f9fa',
-              borderRadius: '8px'
-            }}>
-              <i className="fas fa-spinner fa-spin" style={{ fontSize: '2rem', color: '#6c757d' }}></i>
-              <p style={{ marginTop: '15px', color: '#6c757d' }}>Loading records...</p>
+            <div
+              className="loading-records"
+              style={{
+                textAlign: "center",
+                padding: "40px",
+                backgroundColor: "#f8f9fa",
+                borderRadius: "8px",
+              }}
+            >
+              <i
+                className="fas fa-spinner fa-spin"
+                style={{ fontSize: "2rem", color: "#6c757d" }}
+              ></i>
+              <p style={{ marginTop: "15px", color: "#6c757d" }}>
+                Loading records...
+              </p>
             </div>
           ) : records.length === 0 ? (
-            <div className="no-records" style={{
-              textAlign: 'center',
-              padding: '40px',
-              backgroundColor: '#f8f9fa',
-              borderRadius: '8px'
-            }}>
-              <i className="fas fa-file-medical" style={{ fontSize: '3rem', color: '#6c757d' }}></i>
-              <p style={{ marginTop: '15px', color: '#6c757d' }}>
+            <div
+              className="no-records"
+              style={{
+                textAlign: "center",
+                padding: "40px",
+                backgroundColor: "#f8f9fa",
+                borderRadius: "8px",
+              }}
+            >
+              <i
+                className="fas fa-file-medical"
+                style={{ fontSize: "3rem", color: "#6c757d" }}
+              ></i>
+              <p style={{ marginTop: "15px", color: "#6c757d" }}>
                 No medical records found. Upload your first record above!
               </p>
             </div>
           ) : (
-            <div className="records-grid" style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-              gap: '20px'
-            }}>
+            <div
+              className="records-grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+                gap: "20px",
+              }}
+            >
               {records.map((record, index) => (
-                <div key={index} className="record-card" style={{
-                  backgroundColor: 'white',
-                  borderRadius: '10px',
-                  overflow: 'hidden',
-                  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                  transition: 'transform 0.3s ease'
-                }}>
-                  <div className="record-preview" style={{ height: '200px', overflow: 'hidden' }}>
-                    {record.url.endsWith('.pdf') ? (
-                      <div className="pdf-preview" style={{
-                        height: '100%',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: '#f8f9fa'
-                      }}>
-                        <i className="fas fa-file-pdf" style={{ fontSize: '3rem', color: '#dc3545' }}></i>
-                        <span style={{ marginTop: '10px', color: '#495057' }}>PDF Document</span>
+                <div
+                  key={index}
+                  className="record-card"
+                  style={{
+                    backgroundColor: "white",
+                    borderRadius: "10px",
+                    overflow: "hidden",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+                    transition: "transform 0.3s ease",
+                  }}
+                >
+                  <div
+                    className="record-preview"
+                    style={{ height: "200px", overflow: "hidden" }}
+                  >
+                    {record.url.endsWith(".pdf") ? (
+                      <div
+                        className="pdf-preview"
+                        style={{
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: "#f8f9fa",
+                        }}
+                      >
+                        <i
+                          className="fas fa-file-pdf"
+                          style={{ fontSize: "3rem", color: "#dc3545" }}
+                        ></i>
+                        <span style={{ marginTop: "10px", color: "#495057" }}>
+                          PDF Document
+                        </span>
                       </div>
                     ) : (
-                      <img 
-                        src={record.url} 
-                        alt="Record" 
+                      <img
+                        src={record.url}
+                        alt="Record"
                         className="record-image"
                         style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover'
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
                         }}
                       />
                     )}
                   </div>
-                  <div className="record-info" style={{ padding: '15px' }}>
-                    <div className="record-type" style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      marginBottom: '10px'
-                    }}>
-                      <i className="fas fa-tag" style={{ color: '#6c757d', marginRight: '8px' }}></i>
-                      <span style={{ 
-                        textTransform: 'capitalize',
-                        color: '#495057',
-                        fontWeight: '500'
-                      }}>
+                  <div className="record-info" style={{ padding: "15px" }}>
+                    <div
+                      className="record-type"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        marginBottom: "10px",
+                      }}
+                    >
+                      <i
+                        className="fas fa-tag"
+                        style={{ color: "#6c757d", marginRight: "8px" }}
+                      ></i>
+                      <span
+                        style={{
+                          textTransform: "capitalize",
+                          color: "#495057",
+                          fontWeight: "500",
+                        }}
+                      >
                         {record.type}
                       </span>
                     </div>
-                    <div className="record-date" style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      color: '#6c757d',
-                      fontSize: '0.9rem'
-                    }}>
-                      <i className="fas fa-calendar" style={{ marginRight: '8px' }}></i>
-                      <span>{new Date(record.uploadDate).toLocaleDateString()}</span>
+                    <div
+                      className="record-date"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        color: "#6c757d",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      <i
+                        className="fas fa-calendar"
+                        style={{ marginRight: "8px" }}
+                      ></i>
+                      <span>
+                        {new Date(record.uploadDate).toLocaleDateString()}
+                      </span>
                     </div>
                   </div>
-                  <div className="record-actions" style={{
-                    padding: '15px',
-                    borderTop: '1px solid #e9ecef',
-                    display: 'flex',
-                    gap: '10px'
-                  }}>
+                  <div
+                    className="record-actions"
+                    style={{
+                      padding: "15px",
+                      borderTop: "1px solid #e9ecef",
+                      display: "flex",
+                      gap: "10px",
+                    }}
+                  >
                     <a
                       href={record.url}
                       target="_blank"
@@ -2325,16 +2862,16 @@ function MedicalRecordsSection() {
 }
 
 const CARD_STYLE = {
-  background: '#fff',
+  background: "#fff",
   borderRadius: 14,
-  boxShadow: '0 2px 12px rgba(60,60,120,0.07)',
+  boxShadow: "0 2px 12px rgba(60,60,120,0.07)",
   padding: 24,
   marginBottom: 18,
   flex: 1,
   minWidth: 220,
   maxWidth: 340,
-  display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'flex-start',
-  alignItems: 'stretch',
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "flex-start",
+  alignItems: "stretch",
 };
