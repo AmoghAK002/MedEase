@@ -11,7 +11,6 @@ const ProfileSetup = ({ onProfileComplete }) => {
     firstName: '',
     lastName: '',
     dateOfBirth: '',
-    age: '',
     phoneNumber: '',
     caretakerPhone: '',
     caretakerEmail: '',
@@ -79,7 +78,7 @@ const ProfileSetup = ({ onProfileComplete }) => {
       await setDoc(userRef, {
         ...existingUserData,
         ...formData,
-        age: age < 20 ? formData.age : undefined,
+        
         email: user.email,
         createdAt: existingUserData.createdAt || new Date().toISOString(),
         profileCompleted: true
