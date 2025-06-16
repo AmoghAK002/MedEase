@@ -17,6 +17,8 @@ import ForgotPassword from "./components/ForgotPassword.js";
 import FloatingChatIcon from "./components/FloatingChatIcon.js";
 import GlobalReminders from "./components/GlobalReminders.js";
 import CaretakerDashboard from "./components/CaretakerDashboard";
+import ContactUs from "./pages/ContactUs";
+import Footer from "./components/Footer";
 
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -119,6 +121,7 @@ function App() {
               )
             }
           />
+          <Route path="/contact" element={<ContactUs />} />
         </Routes>
         {user && profileCompleted && (
           <>
@@ -138,6 +141,7 @@ function App() {
           pauseOnHover
           theme="light"
         />
+        <Footer />
       </div>
     </Router>
   );

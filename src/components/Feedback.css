@@ -1,0 +1,223 @@
+.feedback-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #e0f7fa 0%, #f8fafc 100%);
+  padding: 2rem;
+}
+
+.feedback-card {
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(44, 62, 80, 0.12);
+  padding: 2.5rem 2rem;
+  max-width: 480px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  animation: fadeIn 0.7s;
+  margin: 2rem 0;
+}
+
+.feedback-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+.feedback-subtitle {
+  font-size: 1.1rem;
+  color: #4a5568;
+  margin-bottom: 2rem;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.star-rating {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  justify-content: center;
+}
+
+.star-rating button {
+  background: none;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  font-size: 2.2rem;
+  transition: transform 0.2s;
+  padding: 0.2rem;
+}
+
+.star-rating button.on .star {
+  color: #FFD600;
+  text-shadow: 0 2px 8px #ffe082;
+  transform: scale(1.15);
+}
+
+.star-rating button.off .star {
+  color: #cfd8dc;
+}
+
+.star-rating button:focus {
+  outline: 2px solid #4CAF50;
+  border-radius: 50%;
+}
+
+.feedback-question-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.feedback-label {
+  font-size: 1.08rem;
+  color: #2c3e50;
+  font-weight: 500;
+  margin-bottom: 0.2rem;
+  letter-spacing: 0.1px;
+}
+
+.feedback-select, .feedback-input, .feedback-email {
+  width: 100%;
+  border-radius: 12px;
+  border: 1.5px solid #e0e0e0;
+  padding: 0.9rem 1rem;
+  font-size: 1.08rem;
+  background: #f8fafc;
+  transition: border-color 0.2s;
+  margin-bottom: 0.1rem;
+}
+
+.feedback-select:focus, .feedback-input:focus, .feedback-email:focus {
+  border-color: #4CAF50;
+  outline: none;
+}
+
+.feedback-radio-group {
+  display: flex;
+  gap: 2rem;
+  margin-top: 0.2rem;
+  margin-bottom: 0.2rem;
+}
+
+.feedback-radio-group label {
+  font-size: 1.08rem;
+  color: #4a5568;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.feedback-textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1.5px solid #e0e0e0;
+  padding: 1rem;
+  font-size: 1.08rem;
+  margin-bottom: 0.1rem;
+  resize: none;
+  background: #f8fafc;
+  transition: border-color 0.2s;
+  line-height: 1.7;
+}
+
+.feedback-textarea:focus {
+  border-color: #4CAF50;
+  outline: none;
+}
+
+.feedback-submit {
+  width: 100%;
+  background: linear-gradient(90deg, #4CAF50 0%, #2ecc71 100%);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  padding: 1rem 0;
+  margin-top: 0.5rem;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.08);
+  transition: background 0.2s, transform 0.2s;
+  letter-spacing: 0.5px;
+}
+
+.feedback-submit:disabled {
+  background: #b2dfdb;
+  color: #fff;
+  cursor: not-allowed;
+}
+
+.feedback-submit:not(:disabled):hover {
+  background: linear-gradient(90deg, #43a047 0%, #27ae60 100%);
+  transform: translateY(-2px) scale(1.03);
+}
+
+.feedback-thankyou {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 250px;
+  text-align: center;
+}
+
+.feedback-thankyou h2 {
+  color: #4CAF50;
+  font-size: 2.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.feedback-thankyou p {
+  color: #2c3e50;
+  font-size: 1.15rem;
+  margin-bottom: 1.5rem;
+}
+
+.feedback-success-icon {
+  font-size: 3.5rem;
+  color: #4CAF50;
+  margin-top: 0.5rem;
+  animation: popIn 0.5s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.5); opacity: 0; }
+  80% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@media (max-width: 700px) {
+  .feedback-card {
+    padding: 1.2rem 0.5rem;
+    max-width: 98vw;
+  }
+  .feedback-title {
+    font-size: 1.3rem;
+  }
+  .feedback-thankyou h2 {
+    font-size: 1.4rem;
+  }
+  .feedback-container {
+    padding: 0.5rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .feedback-card {
+    padding: 0.5rem 0.1rem;
+  }
+} 

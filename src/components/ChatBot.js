@@ -65,40 +65,9 @@ Provide a helpful and accurate response (including the disclaimer):`;
 
       // Simulate typing delay
       setTimeout(() => {
-        const botText = response.data.text?.trim();
+        const botText = response.data.text;
         if (botText) {
-          // Process and format the message
-          const formattedText = botText
-            .split('\n')
-            .map(line => line.trim())
-            .filter(line => line)
-            .join('\n\n');
-
-          // Split into chunks if the message is very long
-          const maxChunkLength = 1000;
-          const chunks = [];
-          let currentChunk = '';
-
-          formattedText.split('\n\n').forEach(paragraph => {
-            if ((currentChunk + paragraph).length > maxChunkLength) {
-              if (currentChunk) chunks.push(currentChunk);
-              currentChunk = paragraph;
-            } else {
-              currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
-            }
-          });
-          if (currentChunk) chunks.push(currentChunk);
-
-          // Add messages in sequence with a small delay
-          chunks.forEach((chunk, index) => {
-            setTimeout(() => {
-              setMessages(prev => [...prev, { 
-                sender: "bot", 
-                text: chunk,
-                isContinuation: index > 0 
-              }]);
-            }, index * 500); // 500ms delay between chunks
-          });
+          setMessages(prev => [...prev, { sender: "bot", text: botText }]);
         } else {
           throw new Error("Empty response from Cohere");
         }
@@ -124,7 +93,7 @@ Provide a helpful and accurate response (including the disclaimer):`;
 
   return (
     <div className="chatbot-container">
-      <div className="messages" style={{ flexGrow: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', maxHeight: '400px' }}>
+      <div className="messages" style={{ flexGrow: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', maxHeight: '100000px' }}>
         {messages.map((msg, index) => (
           <Message 
             key={index} 

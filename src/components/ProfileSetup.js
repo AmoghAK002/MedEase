@@ -52,6 +52,24 @@ const ProfileSetup = ({ onProfileComplete }) => {
         return;
       }
 
+      // Validate phone number format (10 digits)
+      if (!/^\d{10}$/.test(formData.phoneNumber)) {
+        throw new Error('Phone number must be exactly 10 digits');
+      }
+
+      // Validate caretaker phone number format (10 digits)
+      if (formData.caretakerPhone && !/^\d{10}$/.test(formData.caretakerPhone)) {
+        throw new Error('Caretaker phone number must be exactly 10 digits');
+      }
+
+      // Validate first name and last name (not numbers only)
+      if (/^\d+$/.test(formData.firstName)) {
+        throw new Error('First name cannot contain only numbers');
+      }
+      if (/^\d+$/.test(formData.lastName)) {
+        throw new Error('Last name cannot contain only numbers');
+      }
+
       // Validate email format if caretaker email is provided
       if (formData.caretakerEmail && !isValidEmail(formData.caretakerEmail)) {
         throw new Error('Please enter a valid caretaker email address');

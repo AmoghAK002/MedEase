@@ -16,6 +16,8 @@ import SignUp from "./register";
 import ForgotPassword from "./ForgotPassword";
 import FloatingChatIcon from "./FloatingChatIcon";
 import HealthVitalsTracker from './HealthVitalsTracker';
+import YourGuide from './YourGuide';
+import Feedback from './Feedback';
 
 // Health facts array
 const healthFacts = [
@@ -402,6 +404,24 @@ const getUrgencyLevel = (refillDate) => {
   return "low";
 };
 
+// Add this helper function at the top-level of the file (outside the component):
+async function downloadPdfFromUrl(url, filename = 'document.pdf') {
+  try {
+    const response = await fetch(url, { mode: 'cors' });
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    alert('Failed to download PDF.');
+  }
+}
+
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [bmiData, setBmiData] = useState(null);
@@ -606,6 +626,23 @@ const Dashboard = () => {
                 </Link>
               </li>
               <li
+                className={activeTab === "guide" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/guide">
+                  <i className="fas fa-book"></i>
+                  <span>Your Guide</span>
+                </Link>
+              </li>
+              <li
+                className={activeTab === "feedback" ? "active" : ""}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Link to="/dashboard/feedback">
+                  <i className="fas fa-star"></i> Feedback
+                </Link>
+              </li>
+              <li
                 onClick={() => {
                   handleLogout();
                   setSidebarOpen(false);
@@ -655,6 +692,8 @@ const Dashboard = () => {
           <Route path="/therapy" element={<TherapySection />} />
           <Route path="/refill" element={<RefillReminders />} />
           <Route path="/vitals" element={<HealthVitalsTracker />} />
+          <Route path="/guide" element={<YourGuide />} />
+          <Route path="/feedback" element={<FeedbackSection />} />
         </Routes>
       </div>
     </div>
@@ -1572,6 +1611,24 @@ function ProfileSection({ userProfile, setUserProfile }) {
     try {
       const user = auth.currentUser;
       if (!user) throw new Error("User not authenticated");
+
+      // Validate phone number format (10 digits)
+      if (!/^\d{10}$/.test(formData.phoneNumber)) {
+        throw new Error("Phone number must be exactly 10 digits");
+      }
+
+      // Validate caretaker phone number format (10 digits)
+      if (formData.caretakerPhone && !/^\d{10}$/.test(formData.caretakerPhone)) {
+        throw new Error("Caretaker phone number must be exactly 10 digits");
+      }
+
+      // Validate first name and last name (not numbers only)
+      if (/^\d+$/.test(formData.firstName)) {
+        throw new Error("First name cannot contain only numbers");
+      }
+      if (/^\d+$/.test(formData.lastName)) {
+        throw new Error("Last name cannot contain only numbers");
+      }
 
       // Validate email format if caretaker email is provided
       if (formData.caretakerEmail && !isValidEmail(formData.caretakerEmail)) {
@@ -2834,15 +2891,25 @@ function MedicalRecordsSection() {
                       gap: "10px",
                     }}
                   >
-                    <a
-                      href={record.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-primary"
-                      style={{ flex: 1 }}
-                    >
-                      <i className="fas fa-eye"></i> View
-                    </a>
+                    {record.url.endsWith('.pdf') ? (
+                      <button
+                        className="btn btn-primary"
+                        style={{ flex: 1 }}
+                        onClick={() => downloadPdfFromUrl(record.url, `record-${index + 1}.pdf`)}
+                      >
+                        <i className="fas fa-download"></i> Download
+                      </button>
+                    ) : (
+                      <a
+                        href={record.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-primary"
+                        style={{ flex: 1 }}
+                      >
+                        <i className="fas fa-eye"></i> View
+                      </a>
+                    )}
                     <button
                       onClick={() => handleDeleteRecord(record.url)}
                       className="btn btn-danger"
@@ -2875,3 +2942,22 @@ const CARD_STYLE = {
   justifyContent: "flex-start",
   alignItems: "stretch",
 };
+
+// Create a new FeedbackSection component
+const FeedbackSection = () => (
+  <div style={{ margin: '60px auto 0 auto', maxWidth: 700, background: 'linear-gradient(135deg, #f8fafc 0%, #e0f7fa 100%)', borderRadius: 24, boxShadow: '0 8px 32px rgba(44,62,80,0.10)', padding: '2.5rem 2rem', textAlign: 'center', position: 'relative' }}>
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 8 }}>
+        <span style={{ fontSize: 36, color: '#FFD600' }}>&#9733;</span>
+        <h2 style={{ fontSize: '2.2rem', fontWeight: 700, color: '#2c3e50', margin: 0 }}>
+          Feedback & Ratings
+        </h2>
+        <span style={{ fontSize: 36, color: '#FFD600' }}>&#9733;</span>
+      </div>
+      <p style={{ color: '#4a5568', fontSize: '1.15rem', margin: 0 }}>
+        We care about your experience! Please rate our service and share your thoughts. Your feedback helps us improve and serve you better.
+      </p>
+    </div>
+    <Feedback />
+  </div>
+);

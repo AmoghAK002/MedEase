@@ -52,8 +52,17 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
+
+    // Password validation
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      toast.error("Password must be at least 8 characters long and contain letters, numbers, and special symbols (@$!%*#?&)");
+      setLoading(false);
+      return;
+    }
+
     try {
-      setLoading(true);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       toast.success("Logged in successfully!");
       await checkUserRole(userCredential.user);

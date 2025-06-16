@@ -20,6 +20,24 @@ function SignUp() {
       toast.error("Passwords do not match!");
       return;
     }
+
+    // Password validation
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      toast.error("Password must be at least 8 characters long and contain letters, numbers, and special symbols (@$!%*#?&)");
+      return;
+    }
+
+    // Validate first name and last name (not numbers only)
+    if (/^\d+$/.test(firstName)) {
+      toast.error("First name cannot contain only numbers");
+      return;
+    }
+    if (/^\d+$/.test(lastName)) {
+      toast.error("Last name cannot contain only numbers");
+      return;
+    }
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
